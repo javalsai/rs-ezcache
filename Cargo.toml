@@ -1,0 +1,16 @@
+[package]
+name = "ezcache"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ambassador = "0.4.1"
+
+[features]
+std = []
+thread-safe = ["std", "nightly"]
+nightly = []
+default = ["std", "thread-safe"]
+
+[dev-dependencies]
+rayon = "1.10.0"

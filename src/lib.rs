@@ -1,0 +1,237 @@
+//! Easy library with some abstractions to implement cache stores.
+//!
+//! Provides several features like:
+//! - Traits to implement cache stores. Feature faillible and infallible variants.
+//! - Cache stores with default generators that activate by default when needed.
+//! - Thread safe variants of everything possible under the "thread-safe" feature.
+//! - Default cache stores implemented for filesystem, memory, etc.
+//!
+//!
+//! # Examples
+//!
+//! ```rust
+//! use ezcache::{CacheStore, stores::MemoryStore};
+//!
+//! let mut store: MemoryStore<&'static str, String> = MemoryStore::default();
+//!
+//! let value = store.get("key");
+//! assert_eq!(value, None);
+//!
+//! store.set("key", &("value".to_owned()));
+//! let value = store.get("key");
+//! assert_eq!(value, Some(String::from("value")));
+//! ```
+//!
+//! ```rust
+//! # use std::{thread, sync::Arc};
+//! use ezcache::{
+//!     TryCacheStore,
+//!     TryCacheStoreErrorMap,
+//!     stores::MemoryStore,
+//!     thread_safe::{
+//!         ThreadSafeTryCacheStore,
+//!         dumb_wrappers::{
+//!             DumbTryThreadSafeWrapper,
+//!             EmptyPoisonError,
+//!         },
+//!     },
+//! };
+//!
+//! let memory_store: MemoryStore<(), String> = MemoryStore::default();
+//! let try_store: TryCacheStoreErrorMap<_, _, _, EmptyPoisonError, _> =
+//!     memory_store.into();
+//! let store = DumbTryThreadSafeWrapper::new(try_store);
+//!
+//! let store = Arc::new(store);
+//! let store_clone = Arc::clone(&store);
+//!
+//! thread::spawn(move || {
+//!     store_clone.ts_one_try_set(&(), &String::from("value in thread"))
+//! }).join().unwrap();
+//!
+//! let value = store.ts_one_try_get(&()).unwrap();
+//! assert_eq!(value, Some(String::from("value in thread")));
+//! ```
+//!
+//! # Contributing, Issues & Discussions
+//! For anything related, please consult the official repository:
+//! <https://github.com/javalsai/rs-ezcache>
+
+#![no_std]
+#[cfg(feature = "std")]
+extern crate std;
+
+pub mod generative;
+pub mod stores;
+#[cfg(feature = "thread-safe")]
+pub mod thread_safe;
+
+use crate::__internal_prelude::*;
+
+/// Trait for a infallible cache store
+#[delegatable_trait]
+pub trait CacheStore {
+    type Key;
+    type Value;
+
+    /// Returns an option of the owned cache element if present
+    fn get(&self, key: impl Borrow<Self::Key>) -> Option<Self::Value>;
+    /// Sets a value given its key
+    fn set(&mut self, key: impl Borrow<Self::Key>, value: impl Borrow<Self::Value>);
+    /// Checks if the cache entry exists
+    fn exists(&self, key: impl Borrow<Self::Key>) -> bool {
+        self.get(key).is_some()
+    }
+}
+
+/// Trait for a fallible cache store, analogous to [CacheStore]
+#[delegatable_trait]
+pub trait TryCacheStore {
+    type Key;
+    type Value;
+    type Error;
+
+    /// Attempts to return an option of the owned cache element if present
+    fn try_get(&self, key: impl Borrow<Self::Key>) -> Result<Option<Self::Value>, Self::Error>;
+    /// Attempts to set a value given its key.
+    fn try_set(
+        &mut self,
+        key: impl Borrow<Self::Key>,
+        value: impl Borrow<Self::Value>,
+    ) -> Result<(), Self::Error>;
+    /// Attempts to check if the cache key entry exists.
+    fn try_exists(&self, key: impl Borrow<Self::Key>) -> Result<bool, Self::Error> {
+        self.try_get(key).map(|v| v.is_some())
+    }
+}
+
+/// Allow any [`CacheStore`] to behave as a [`TryCacheStore`] that never fails.
+impl<T: CacheStore> TryCacheStore for T {
+    type Key = T::Key;
+    type Value = T::Value;
+    type Error = Infallible;
+
+    fn try_get(&self, key: impl Borrow<Self::Key>) -> Result<Option<Self::Value>, Self::Error> {
+        Ok(self.get(key))
+    }
+
+    fn try_set(
+        &mut self,
+        key: impl Borrow<Self::Key>,
+        value: impl Borrow<Self::Value>,
+    ) -> Result<(), Self::Error> {
+        #[allow(clippy::unit_arg)]
+        Ok(self.set(key, value))
+    }
+
+    fn try_exists(&self, key: impl Borrow<Self::Key>) -> Result<bool, Self::Error> {
+        Ok(self.exists(key))
+    }
+}
+
+/// Struct to convert the error type of a [`TryCacheStore`] into another
+pub struct TryCacheStoreErrorMap<K, V, E, ET, S: TryCacheStore<Key = K, Value = V, Error = E>> {
+    pub store: S,
+    __phantom: PhantomData<ET>,
+}
+
+impl<K, V, E, ET: From<E>, S: TryCacheStore<Key = K, Value = V, Error = E>>
+    TryCacheStoreErrorMap<K, V, E, ET, S>
+{
+    pub fn from_store(store: S) -> Self {
+        Self::from(store)
+    }
+}
+
+impl<K, V, E, ET: From<E>, S: TryCacheStore<Key = K, Value = V, Error = E>> TryCacheStore
+    for TryCacheStoreErrorMap<K, V, E, ET, S>
+{
+    type Key = K;
+    type Value = V;
+    type Error = ET;
+
+    fn try_get(&self, key: impl Borrow<Self::Key>) -> Result<Option<Self::Value>, Self::Error> {
+        self.store.try_get(key).map_err(|e| e.into())
+    }
+
+    fn try_set(
+        &mut self,
+        key: impl Borrow<Self::Key>,
+        value: impl Borrow<Self::Value>,
+    ) -> Result<(), Self::Error> {
+        self.store.try_set(key, value).map_err(|e| e.into())
+    }
+
+    fn try_exists(&self, key: impl Borrow<Self::Key>) -> Result<bool, Self::Error> {
+        self.store.try_exists(key).map_err(|e| e.into())
+    }
+}
+
+impl<K, V, E, ET: From<E>, T: TryCacheStore<Key = K, Value = V, Error = E>> From<T>
+    for TryCacheStoreErrorMap<K, V, E, ET, T>
+{
+    fn from(value: T) -> Self {
+        Self {
+            store: value,
+            __phantom: PhantomData,
+        }
+    }
+}
+
+pub mod prelude {
+    //! Prelude of the module.
+    //!
+    //! Provides basic types across the module whose names shouldn't conflict with any other
+    //! imported elements from other crates.
+
+    // pub use crate::generative::{GenCacheStore, TryGenCacheStore};
+    #[cfg(feature = "thread-safe")]
+    pub use crate::thread_safe::ThreadSafeTryCacheStore;
+    pub use crate::{CacheStore, TryCacheStore};
+}
+
+mod __internal_prelude {
+    pub use core::{borrow::Borrow, convert::Infallible, marker::PhantomData};
+
+    pub use crate::prelude::*;
+    #[allow(unused_imports)]
+    pub use crate::TryCacheStoreErrorMap;
+    #[allow(unused_imports)]
+    pub use ambassador::{delegatable_trait, Delegate};
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rayon::iter::{ParallelBridge, ParallelIterator};
+    use stores::MemoryStore;
+    use thread_safe::dumb_wrappers::{DumbTryThreadSafeWrapper, EmptyPoisonError};
+
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let fstore: TryCacheStoreErrorMap<_, _, _, EmptyPoisonError, _> =
+            MemoryStore::default().into();
+        let store: DumbTryThreadSafeWrapper<(), usize, EmptyPoisonError, _> =
+            DumbTryThreadSafeWrapper::new(fstore);
+
+        let store = Arc::new(store);
+        let store_clone = Arc::clone(&store);
+
+        let n = 1000;
+
+        _ = (0..n).par_bridge().try_for_each(move |_| {
+            let store = &store_clone;
+
+            let mut handle = store.ts_try_xlock(&()).ok()?;
+            let value = store.ts_try_get(&(&handle).into()).ok()?.unwrap_or(0);
+            store.ts_try_set(&mut handle, &(value + 1)).ok()?;
+            drop(handle);
+            Some(())
+        });
+
+        assert_eq!(store.ts_one_try_get(&()).unwrap(), Some(n));
+    }
+}
