@@ -37,11 +37,13 @@ where
         args: Self::Args,
     ) -> <Self as ThreadSafeGenCacheStore<'a>>::Value;
     /// Get the value from cache or generate a new one adding it.
-    fn ts_get_or_new(
+    fn ts_get_or_new<'b>(
         &'a self,
         key: &'a <Self as ThreadSafeGenCacheStore<'a>>::Key,
         args: Self::Args,
-    ) -> <Self as ThreadSafeGenCacheStore<'a>>::Value;
+    ) -> <Self as ThreadSafeGenCacheStore<'a>>::Value
+    where
+        'a: 'b;
     /// Generate a new value without checking cache and add the value to it, possibly overwriting
     /// previous values.
     fn ts_gen_new(
@@ -145,8 +147,14 @@ impl<'a, K, V, A, S: super::ThreadSafeCacheStore<'a, Key = K, Value = V>, F: Fn(
 }
 
 /// Implement [`ThreadSafeCacheStore`]
-impl<'a, K, V, A, S: super::ThreadSafeCacheStore<'a, Key = K, Value = V>, F: Fn(&K, A) -> V>
-    ThreadSafeGenCacheStore<'a> for ThreadSafeGenCacheStoreWrapper<'a, K, V, A, S, F>
+impl<
+        'a,
+        K,
+        V: Clone,
+        A,
+        S: super::ThreadSafeCacheStore<'a, Key = K, Value = V>,
+        F: Fn(&K, A) -> V,
+    > ThreadSafeGenCacheStore<'a> for ThreadSafeGenCacheStoreWrapper<'a, K, V, A, S, F>
 {
     type Key = K;
     type Value = V;
@@ -171,19 +179,25 @@ impl<'a, K, V, A, S: super::ThreadSafeCacheStore<'a, Key = K, Value = V>, F: Fn(
     }
 
     // FIXME: race conditions
-    fn ts_get_or_new(
+    fn ts_get_or_new<'b>(
         &'a self,
         key: &'a <Self as ThreadSafeGenCacheStore<'a>>::Key,
         args: Self::Args,
-    ) -> <Self as ThreadSafeGenCacheStore<'a>>::Value {
-        let handle = self.ts_xlock(key);
-        let shandle: &Self::SLock = &(&handle).into();
+    ) -> <Self as ThreadSafeGenCacheStore<'a>>::Value
+    where
+        'a: 'b,
+    {
+        let mut handle = self.ts_xlock(key);
+        let slock: Self::SLock = (&handle).into();
+        // let value: <Self as ThreadSafeGenCacheStore<'a>>::Value = (unsafe {
+        //     &*((&mut () as *mut ()) as *const <Self as ThreadSafeGenCacheStore<'a>>::Value)
+        // })
+        // .clone();
         let value = self
             .store
-            .ts_get(&shandle)
+            .ts_get(&slock)
             .unwrap_or_else(|| self.ts_gen(key, args));
-        self.store.ts_one_set(key, &value);
-        let _ = shandle;
+        self.store.ts_set(&mut handle, &value);
         drop(handle);
         value
     }
