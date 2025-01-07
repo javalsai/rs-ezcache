@@ -8,50 +8,7 @@
 //!
 //!
 //! # Examples
-//!
-//! ```rust
-//! use ezcache::{CacheStore, stores::MemoryStore};
-//!
-//! let mut store: MemoryStore<&'static str, String> = MemoryStore::default();
-//!
-//! let value = store.get("key");
-//! assert_eq!(value, None);
-//!
-//! store.set("key", &("value".to_owned()));
-//! let value = store.get("key");
-//! assert_eq!(value, Some(String::from("value")));
-//! ```
-//!
-//! ```rust
-//! # use std::{thread, sync::Arc};
-//! use ezcache::{
-//!     TryCacheStore,
-//!     TryCacheStoreErrorMap,
-//!     stores::MemoryStore,
-//!     thread_safe::{
-//!         ThreadSafeTryCacheStore,
-//!         dumb_wrappers::{
-//!             DumbTryThreadSafeWrapper,
-//!             EmptyDumbError,
-//!         },
-//!     },
-//! };
-//!
-//! let memory_store: MemoryStore<(), String> = MemoryStore::default();
-//! let try_store: TryCacheStoreErrorMap<_, _, _, EmptyDumbError, _> =
-//!     memory_store.into();
-//! let store = DumbTryThreadSafeWrapper::new(try_store);
-//!
-//! let store = Arc::new(store);
-//! let store_clone = Arc::clone(&store);
-//!
-//! thread::spawn(move || {
-//!     store_clone.ts_one_try_set(&(), &String::from("value in thread"))
-//! }).join().unwrap();
-//!
-//! let value = store.ts_one_try_get(&()).unwrap();
-//! assert_eq!(value, Some(String::from("value in thread")));
-//! ```
+//! - [stores]
 //!
 //! # Contributing, Issues & Discussions
 //! For anything related, please consult the official repository:
@@ -202,6 +159,7 @@ mod __internal_prelude {
 }
 
 #[cfg(test)]
+#[cfg(feature = "std")]
 mod tests {
     use std::sync::Arc;
 
