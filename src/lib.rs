@@ -32,13 +32,13 @@
 //!         ThreadSafeTryCacheStore,
 //!         dumb_wrappers::{
 //!             DumbTryThreadSafeWrapper,
-//!             EmptyPoisonError,
+//!             EmptyDumbError,
 //!         },
 //!     },
 //! };
 //!
 //! let memory_store: MemoryStore<(), String> = MemoryStore::default();
-//! let try_store: TryCacheStoreErrorMap<_, _, _, EmptyPoisonError, _> =
+//! let try_store: TryCacheStoreErrorMap<_, _, _, EmptyDumbError, _> =
 //!     memory_store.into();
 //! let store = DumbTryThreadSafeWrapper::new(try_store);
 //!
@@ -207,15 +207,15 @@ mod tests {
 
     use rayon::iter::{ParallelBridge, ParallelIterator};
     use stores::MemoryStore;
-    use thread_safe::dumb_wrappers::{DumbTryThreadSafeWrapper, EmptyPoisonError};
+    use thread_safe::dumb_wrappers::{DumbTryThreadSafeWrapper, EmptyDumbError};
 
     use super::*;
 
     #[test]
     fn it_works() {
-        let fstore: TryCacheStoreErrorMap<_, _, _, EmptyPoisonError, _> =
+        let fstore: TryCacheStoreErrorMap<_, _, _, EmptyDumbError, _> =
             MemoryStore::default().into();
-        let store: DumbTryThreadSafeWrapper<(), usize, EmptyPoisonError, _> =
+        let store: DumbTryThreadSafeWrapper<(), usize, EmptyDumbError, _> =
             DumbTryThreadSafeWrapper::new(fstore);
 
         let store = Arc::new(store);

@@ -1,12 +1,18 @@
 //! Several implementations of cache stores for common use cases, all of require std for now:
 //! - [`MemoryStore`]: So just HashMap cool wrapping around. You'll see it most for examples.
+//! - [`ThreadSafeMemoryStore`]: Concurrent store in memory. Uses unsafe under the hood but should
+//!   be optimized enough.
 
-use crate::__internal_prelude::*;
+use crate::{__internal_prelude::*, thread_safe::dumb_wrappers::EmptyDumbError};
 
-use core::{borrow::Borrow, hash::Hash};
-use std::collections::HashMap;
+use core::{borrow::Borrow, hash::Hash, ops::Deref};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
 #[derive(Default)]
+/// Simple thread unsafe in memory cache store.
 pub struct MemoryStore<K, V> {
     cache: HashMap<K, V>,
 }
@@ -35,52 +41,192 @@ impl<K: Hash + Eq + Sized + Clone, V: Clone> CacheStore for MemoryStore<K, V> {
     }
 }
 
-// /// Testing stores
-// pub mod __stores {
-//     use super::*;
-//     use core::hash::Hash;
-//     use std::{
-//         collections::HashMap,
-//         sync::{RwLock, RwLockWriteGuard},
-//     };
+/// Wrapper around a [`RwLockReadGuard`] and a [`RwLockWriteGuard`] to allow any to be used.
+pub enum RwLockAnyGuard<'lock, 'guard, T> {
+    Read(RwLockReadGuard<'lock, T>),
+    Write(&'guard RwLockWriteGuard<'lock, T>),
+}
 
-//     pub struct ThreadSafeMemoryCache<K, V> {
-//         store: RwLock<HashMap<K, RwLock<Option<V>>>>,
-//     }
+impl<'lock, T> From<RwLockReadGuard<'lock, T>> for RwLockAnyGuard<'lock, '_, T> {
+    fn from(value: RwLockReadGuard<'lock, T>) -> Self {
+        Self::Read(value)
+    }
+}
 
-//     pub struct MemoryCachePoisonError;
-//     impl<T> From<PoisonError<T>> for MemoryCachePoisonError {
-//         fn from(_: PoisonError<T>) -> Self {
-//             Self
-//         }
-//     }
+impl<'lock, 'guard, T> From<&'guard RwLockWriteGuard<'lock, T>>
+    for RwLockAnyGuard<'lock, 'guard, T>
+{
+    fn from(value: &'guard RwLockWriteGuard<'lock, T>) -> Self {
+        Self::Write(value)
+    }
+}
 
-//     impl<K: Eq + Hash + ?Sized + Clone, V> ThreadSafeTryCacheStore for ThreadSafeMemoryCache<K, V> {
-//         type Key = K;
-//         type Value = V;
-//         type LockDeref = Option<V>;
-//         type Error<G> = MemoryCachePoisonError;
+impl<T> Deref for RwLockAnyGuard<'_, '_, T> {
+    type Target = T;
 
-//         fn ts_try_xlock<G>(
-//             &self,
-//             key: &Self::Key,
-//         ) -> Result<impl DerefMut<Target = Self::LockDeref>, Self::Error<G>> {
-//             let mut hashmap_guard = self.store.write()?;
-//             let x = Ok(hashmap_guard.get(key).unwrap().write()?);
-//             x
-//             // match hashmap_guard.get(key) {
-//             //     Some(v) => {
-//             //         let inner_handle = v.write();
-//             //         // drop(hashmap_guard);
-//             //         Ok(inner_handle?)
-//             //     }
-//             //     None => {
-//             //         let inner_val = RwLock::new(None);
-//             //         let inner_lock = inner_val.write();
-//             //         hashmap_guard.insert(key.clone(), inner_val);
-//             //         todo!()
-//             //     }
-//             // }
-//         }
-//     }
-// }
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Read(l) => l,
+            Self::Write(l) => l,
+        }
+    }
+}
+
+/// This struct is unsafe under the hood, so you must be careful when using it. No professional
+/// reviewed the unsafe usage and the safe code to do this would be too complex for me.
+///
+/// All unsafe usage is mainly to detach inner locks from the hashmap lock itself tho, so as long
+/// as the hashmap itself doesnt move the value or the entry gets deleted, nothing should happen,
+/// and I think both can't happen at least now.
+#[derive(Default)]
+pub struct ThreadSafeMemoryStore<K, V> {
+    cache: Mutex<HashMap<K, RwLock<Option<V>>>>,
+}
+
+impl<K: Hash + Eq, V> ThreadSafeMemoryStore<K, V> {
+    pub fn new(cache: HashMap<K, V>) -> Self {
+        Self {
+            cache: Mutex::new(
+                cache
+                    .into_iter()
+                    .map(|(k, v)| (k, RwLock::new(Some(v))))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl<'lock, K: Hash + Eq + Sized + Clone, V: Clone> ThreadSafeTryCacheStore<'lock>
+    for ThreadSafeMemoryStore<K, V>
+where
+    Self: 'lock,
+{
+    type Key = K;
+    type Value = V;
+    type Error = EmptyDumbError;
+    type SLock<'guard>
+        = RwLockAnyGuard<'lock, 'guard, Option<V>>
+    where
+        'lock: 'guard;
+    type XLock = RwLockWriteGuard<'lock, Option<V>>;
+
+    fn ts_try_get(
+        &'lock self,
+        handle: &Self::SLock<'_>,
+    ) -> Result<Option<Self::Value>, Self::Error> {
+        Ok((*handle).clone())
+    }
+
+    fn ts_try_set(
+        &'lock self,
+        handle: &mut Self::XLock,
+        value: &Self::Value,
+    ) -> Result<(), Self::Error> {
+        **handle = Some(value.clone());
+        Ok(())
+    }
+
+    fn ts_try_exists(&'lock self, handle: &Self::SLock<'_>) -> Result<bool, Self::Error> {
+        Ok((*handle).is_some())
+    }
+
+    fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
+        let mut cache_lock = self.cache.lock()?;
+        let value = match cache_lock.get(key) {
+            Some(thing) => thing,
+            None => {
+                cache_lock.insert(key.clone(), Default::default());
+                cache_lock.get(key).unwrap()
+            }
+        };
+
+        // Detach the lock itself from the HashMap guard lifetime
+        let value: *const _ = value;
+        let lock: Self::XLock = unsafe { (*value).write()? };
+        drop(cache_lock);
+
+        Ok(lock)
+    }
+
+    fn ts_try_slock(&'lock self, key: &'lock Self::Key) -> Result<Self::SLock<'lock>, Self::Error> {
+        let mut cache_lock = self.cache.lock()?;
+        let value = match cache_lock.get(key) {
+            Some(thing) => thing,
+            None => {
+                cache_lock.insert(key.clone(), Default::default());
+                cache_lock.get(key).unwrap()
+            }
+        };
+
+        // Detach the lock itself from the HashMap guard lifetime
+        let value: *const _ = value;
+        let lock: Self::SLock<'_> = unsafe { (*value).read()?.into() };
+        drop(cache_lock);
+
+        Ok(lock)
+    }
+
+    fn ts_try_xlock_nblock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
+        let mut cache_lock = self.cache.lock()?;
+        let value = match cache_lock.get(key) {
+            Some(thing) => thing,
+            None => {
+                cache_lock.insert(key.clone(), Default::default());
+                cache_lock.get(key).unwrap()
+            }
+        };
+
+        // Detach the lock itself from the HashMap guard lifetime
+        let value: *const _ = value;
+        let lock: Self::XLock = unsafe { (*value).try_write()? };
+        drop(cache_lock);
+
+        Ok(lock)
+    }
+
+    fn ts_try_slock_nblock(
+        &'lock self,
+        key: &'lock Self::Key,
+    ) -> Result<Self::SLock<'lock>, Self::Error> {
+        let mut cache_lock = self.cache.lock()?;
+        let value = match cache_lock.get(key) {
+            Some(thing) => thing,
+            None => {
+                cache_lock.insert(key.clone(), Default::default());
+                cache_lock.get(key).unwrap()
+            }
+        };
+
+        // Detach the lock itself from the HashMap guard lifetime
+        let value: *const _ = value;
+        let lock: Self::SLock<'_> = unsafe { (*value).try_read()?.into() };
+        drop(cache_lock);
+
+        Ok(lock)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ThreadSafeMemoryStore, ThreadSafeTryCacheStore};
+
+    #[test]
+    fn xlock_2_diff_keys() {
+        let store = ThreadSafeMemoryStore::<usize, usize>::default();
+
+        let x1 = store.ts_try_xlock_nblock(&0).expect("to lock first key");
+        let x2 = store.ts_try_xlock_nblock(&1).expect("to lock second key");
+        drop((x1, x2));
+    }
+
+    #[test]
+    fn xlock_2_same_keys() {
+        let store = ThreadSafeMemoryStore::<usize, usize>::default();
+
+        let x1 = store.ts_try_xlock_nblock(&0).expect("to lock first key");
+        let x2 = store
+            .ts_try_xlock_nblock(&0)
+            .expect_err("to not lock second key");
+        drop((x1, x2));
+    }
+}

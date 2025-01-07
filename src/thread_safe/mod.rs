@@ -95,6 +95,11 @@ where
     fn ts_xlock(&'lock self, key: &Self::Key) -> Self::XLock;
     /// Acquire a shared lock of a key until the handle is dropped.
     fn ts_slock(&'lock self, key: &Self::Key) -> Self::SLock<'lock>;
+
+    /// Exclusively lock a key until the handle is dropped. Non blocking.
+    fn ts_xlock_nblock(&'lock self, key: &Self::Key) -> Self::XLock;
+    /// Acquire a shared lock of a key until the handle is dropped. Non blocking.
+    fn ts_slock_nblock(&'lock self, key: &Self::Key) -> Self::SLock<'lock>;
 }
 
 /// Trait for a thread safe fallible cache store, analogous to [ThreadSafeCacheStore]
@@ -157,6 +162,14 @@ where
     fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error>;
     /// Attempt to acquire a shared lock of a key until the handle is dropped.
     fn ts_try_slock(&'lock self, key: &'lock Self::Key) -> Result<Self::SLock<'lock>, Self::Error>;
+
+    /// Attempt to exclusively lock a key until the handle is dropped. Non block.
+    fn ts_try_xlock_nblock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error>;
+    /// Attempt to acquire a shared lock of a key until the handle is dropped. Non block.
+    fn ts_try_slock_nblock(
+        &'lock self,
+        key: &'lock Self::Key,
+    ) -> Result<Self::SLock<'lock>, Self::Error>;
 }
 
 /// Blanket implementation to allow a [`ThreadSafeCacheStore`] to behave as a
@@ -205,6 +218,17 @@ impl<
 
     fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
         Ok(self.ts_xlock(key))
+    }
+
+    fn ts_try_slock_nblock(
+        &'lock self,
+        key: &'lock Self::Key,
+    ) -> Result<Self::SLock<'lock>, Self::Error> {
+        Ok(self.ts_slock_nblock(key))
+    }
+
+    fn ts_try_xlock_nblock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
+        Ok(self.ts_xlock_nblock(key))
     }
 }
 
@@ -315,22 +339,33 @@ pub use implTryThreadUnsafe;
 
 pub mod dumb_wrappers {
     use core::{convert::Infallible, marker::PhantomData};
-    use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+    use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 
     use super::*;
 
     #[derive(Debug)]
     /// Empty struct to represent [`PoisonErrors`][std::sync::PoisonError]s without actually
     /// holding a guard.
-    pub struct EmptyPoisonError;
-    impl From<Infallible> for EmptyPoisonError {
+    pub enum EmptyDumbError {
+        Poisoned,
+        WouldBlock,
+    }
+    impl From<Infallible> for EmptyDumbError {
         fn from(_: Infallible) -> Self {
             unreachable!()
         }
     }
-    impl<T> From<PoisonError<T>> for EmptyPoisonError {
+    impl<T> From<PoisonError<T>> for EmptyDumbError {
         fn from(_: PoisonError<T>) -> Self {
-            Self
+            Self::Poisoned
+        }
+    }
+    impl<T> From<TryLockError<T>> for EmptyDumbError {
+        fn from(value: TryLockError<T>) -> Self {
+            match value {
+                TryLockError::Poisoned(_) => Self::Poisoned,
+                TryLockError::WouldBlock => Self::WouldBlock,
+            }
         }
     }
 
@@ -384,13 +419,13 @@ pub mod dumb_wrappers {
 
     /// Generic enum for a shared key, can hold a [`RwLockWriteGuard`] or [`RwLockReadGuard`] as
     /// both should be possible to be used for shared access, along with the key accessed itself.
-    /// Hacky solution for the [`DumbTryThreadSafeWrapper`]
-    pub enum RwLockAnyGuard<'lock, 'guard, T, K> {
+    /// Hacky solution for the [`DumbTryThreadSafeWrapper`].
+    pub enum RwLockAnyGuardKey<'lock, 'guard, T, K> {
         Read((RwLockReadGuard<'lock, T>, &'lock K)),
         Write(&'guard (RwLockWriteGuard<'lock, T>, &'lock K)),
     }
 
-    impl<'lock, T, K> RwLockAnyGuard<'lock, '_, T, K> {
+    impl<'lock, T, K> RwLockAnyGuardKey<'lock, '_, T, K> {
         fn get_key(&self) -> &'lock K {
             match self {
                 Self::Read((_, k)) => k,
@@ -399,21 +434,23 @@ pub mod dumb_wrappers {
         }
     }
 
-    impl<'lock, T, K> From<(RwLockReadGuard<'lock, T>, &'lock K)> for RwLockAnyGuard<'lock, '_, T, K> {
+    impl<'lock, T, K> From<(RwLockReadGuard<'lock, T>, &'lock K)>
+        for RwLockAnyGuardKey<'lock, '_, T, K>
+    {
         fn from(value: (RwLockReadGuard<'lock, T>, &'lock K)) -> Self {
             Self::Read(value)
         }
     }
 
     impl<'lock, 'guard, T, K> From<&'guard (RwLockWriteGuard<'lock, T>, &'lock K)>
-        for RwLockAnyGuard<'lock, 'guard, T, K>
+        for RwLockAnyGuardKey<'lock, 'guard, T, K>
     {
         fn from(value: &'guard (RwLockWriteGuard<'lock, T>, &'lock K)) -> Self {
             Self::Write(value)
         }
     }
 
-    impl<T, K> Deref for RwLockAnyGuard<'_, '_, T, K> {
+    impl<T, K> Deref for RwLockAnyGuardKey<'_, '_, T, K> {
         type Target = T;
 
         fn deref(&self) -> &Self::Target {
@@ -430,12 +467,14 @@ pub mod dumb_wrappers {
         Self: 'lock,
         S: TryCacheStore<Key = K, Value = V, Error = E> + 'lock,
         E: From<PoisonError<RwLockReadGuard<'lock, S>>>
-            + From<PoisonError<RwLockWriteGuard<'lock, S>>>,
+            + From<PoisonError<RwLockWriteGuard<'lock, S>>>
+            + From<TryLockError<RwLockReadGuard<'lock, S>>>
+            + From<TryLockError<RwLockWriteGuard<'lock, S>>>,
     {
         type Key = K;
         type Value = V;
         type SLock<'guard>
-            = RwLockAnyGuard<'lock, 'guard, S, Self::Key>
+            = RwLockAnyGuardKey<'lock, 'guard, S, Self::Key>
         where
             'lock: 'guard;
         type XLock = (RwLockWriteGuard<'lock, S>, &'lock Self::Key);
@@ -466,6 +505,20 @@ pub mod dumb_wrappers {
 
         fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
             Ok((self.store.write()?, key))
+        }
+
+        fn ts_try_slock_nblock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::SLock<'lock>, Self::Error> {
+            Ok((self.store.try_read()?, key).into())
+        }
+
+        fn ts_try_xlock_nblock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::XLock, Self::Error> {
+            Ok((self.store.try_write()?, key))
         }
     }
 }
