@@ -122,7 +122,7 @@ impl<T> Deref for RwLockAnyGuard<'_, '_, T> {
 /// reviewed the unsafe usage and the safe code to do this would be too complex for me.
 ///
 /// All unsafe usage is mainly to detach inner locks from the hashmap lock itself tho, so as long
-/// as the hashmap itself doesnt move the value or the entry gets deleted, nothing should happen,
+/// as the hashmap itself doesn't move the value or the entry gets deleted, nothing should happen,
 /// and I think both can't happen at least now.
 #[derive(Default)]
 pub struct ThreadSafeMemoryStore<K, V> {

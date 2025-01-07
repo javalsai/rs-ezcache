@@ -9,6 +9,7 @@
 //!
 //! # Examples
 //! - [stores]
+//! - [generative]
 //!
 //! # Contributing, Issues & Discussions
 //! For anything related, please consult the official repository:
