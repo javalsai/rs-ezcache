@@ -4,7 +4,7 @@
 //!
 //! There are a few lifetimes and generics involved in this, so it might be confusing and there was
 //! a lot of bodging trying to get it to work, so it's very likely that there's something that
-//! doesn't quite works.
+//! doesn't quite work.
 //!
 //! There are two classifications of a thread-safe cache store:
 //! - **Smart:** Means they perform smart logic to allow as much concurrency as possible
@@ -44,7 +44,7 @@
 //! If you want to wrap a [`TryCacheStore`], make sure that the error type implements
 //! [`From<PoisonError<…>>`][From] for [`PoisonError`]s.
 
-// pub mod generative;
+pub mod generative;
 
 use crate::__internal_prelude::*;
 
@@ -53,132 +53,141 @@ use std::sync::PoisonError;
 
 /// Trait for a thread safe infallible cache store, analogous to [CacheStore]
 #[delegatable_trait]
-pub trait ThreadSafeCacheStore<'a>
+pub trait ThreadSafeCacheStore<'lock>
 where
-    Self: 'a,
+    Self: 'lock,
 {
     type Key;
     type Value;
     /// Shared lock over a key, must be possible to make one by borrowing a exclusive lock.
-    type SLock<'b>: From<&'b Self::XLock> + 'b
+    type SLock<'guard>: From<&'guard Self::XLock>
     where
-        'a: 'b;
+        'lock: 'guard;
     /// Exclusive lock over a wey.
-    type XLock: 'a;
+    type XLock: 'lock;
 
     /// Returns an option of the owned cache element if present.
-    fn ts_get(&'a self, handle: &Self::SLock<'a>) -> Option<Self::Value>;
+    fn ts_get(&'lock self, handle: &Self::SLock<'_>) -> Option<Self::Value>;
     /// Sets a value given its key.
-    fn ts_set(&'a self, handle: &mut Self::XLock, value: &Self::Value);
+    fn ts_set(&'lock self, handle: &mut Self::XLock, value: &Self::Value);
     /// Checks if the cache entry exists.
-    fn ts_exists(&'a self, handle: &Self::SLock<'a>) -> bool {
+    fn ts_exists(&'lock self, handle: &Self::SLock<'_>) -> bool {
         self.ts_get(handle).is_some()
     }
 
     /// Same as `ts_get` but it performs a one-time lock
-    fn ts_one_get(&'a self, key: &'a Self::Key) -> Option<Self::Value> {
+    fn ts_one_get(&'lock self, key: &Self::Key) -> Option<Self::Value> {
         let handle = self.ts_slock(key);
         self.ts_get(&handle)
     }
     /// Same as `ts_set` but it performs a one-time lock
-    fn ts_one_set(&'a self, key: &'a Self::Key, value: &Self::Value) {
+    fn ts_one_set(&'lock self, key: &Self::Key, value: &Self::Value) {
         let mut handle = self.ts_xlock(key);
         self.ts_set(&mut handle, value)
     }
     /// Same as `ts_exists` but it performs a one-time lock
-    fn ts_one_exists(&'a self, key: &'a Self::Key) -> bool {
+    fn ts_one_exists(&'lock self, key: &Self::Key) -> bool {
         let handle = self.ts_slock(key);
         self.ts_exists(&handle)
     }
 
     /// Exclusively lock a key until the handle is dropped.
-    fn ts_xlock(&'a self, key: &Self::Key) -> Self::XLock;
+    fn ts_xlock(&'lock self, key: &Self::Key) -> Self::XLock;
     /// Acquire a shared lock of a key until the handle is dropped.
-    fn ts_slock(&'a self, key: &Self::Key) -> Self::SLock<'a>;
+    fn ts_slock(&'lock self, key: &Self::Key) -> Self::SLock<'lock>;
 }
 
 /// Trait for a thread safe fallible cache store, analogous to [ThreadSafeCacheStore]
 #[delegatable_trait]
-pub trait ThreadSafeTryCacheStore<'a>
+pub trait ThreadSafeTryCacheStore<'lock>
 where
-    Self: 'a,
+    Self: 'lock,
 {
     type Key;
     type Value;
     /// Shared lock over a key, must be possible to make one by borrowing a exclusive lock.
-    type SLock<'b>: From<&'b Self::XLock> + 'b
+    type SLock<'guard>: From<&'guard Self::XLock>
     where
-        'a: 'b;
+        'lock: 'guard;
     /// Exclusive lock over a wey.
-    type XLock: 'a;
+    type XLock: 'lock;
 
     type Error;
 
     /// Attempts to return an option of the owned cache element if present.
-    fn ts_try_get(&'a self, handle: &Self::SLock<'_>) -> Result<Option<Self::Value>, Self::Error>;
+    fn ts_try_get(
+        &'lock self,
+        handle: &Self::SLock<'_>,
+    ) -> Result<Option<Self::Value>, Self::Error>;
     /// Attempts to set a value given its key.
     fn ts_try_set(
-        &'a self,
+        &'lock self,
         handle: &mut Self::XLock,
         value: &Self::Value,
     ) -> Result<(), Self::Error>;
     /// Attempts to check if the cache key entry exists.
-    fn ts_try_exists(&'a self, handle: &Self::SLock<'_>) -> Result<bool, Self::Error> {
+    fn ts_try_exists(&'lock self, handle: &Self::SLock<'_>) -> Result<bool, Self::Error> {
         self.ts_try_get(handle).map(|v| v.is_some())
     }
 
     /// Same as `ts_get` but it performs a one-time lock
-    fn ts_one_try_get(&'a self, key: &'a Self::Key) -> Result<Option<Self::Value>, Self::Error> {
+    fn ts_one_try_get(
+        &'lock self,
+        key: &'lock Self::Key,
+    ) -> Result<Option<Self::Value>, Self::Error> {
         let handle = self.ts_try_slock(key)?;
         self.ts_try_get(&handle)
     }
     /// Same as `ts_set` but it performs a one-time lock
     fn ts_one_try_set(
-        &'a self,
-        key: &'a Self::Key,
+        &'lock self,
+        key: &'lock Self::Key,
         value: &Self::Value,
     ) -> Result<(), Self::Error> {
         let mut handle = self.ts_try_xlock(key)?;
         self.ts_try_set(&mut handle, value)
     }
     /// Same as `ts_exists` but it performs a one-time lock
-    fn ts_one_try_exists(&'a self, key: &'a Self::Key) -> Result<bool, Self::Error> {
+    fn ts_one_try_exists(&'lock self, key: &'lock Self::Key) -> Result<bool, Self::Error> {
         let handle = self.ts_try_slock(key)?;
         self.ts_try_exists(&handle)
     }
 
     /// Attempt to exclusively lock a key until the handle is dropped.
-    fn ts_try_xlock(&'a self, key: &'a Self::Key) -> Result<Self::XLock, Self::Error>;
+    fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error>;
     /// Attempt to acquire a shared lock of a key until the handle is dropped.
-    fn ts_try_slock(&'a self, key: &'a Self::Key) -> Result<Self::SLock<'a>, Self::Error>;
+    fn ts_try_slock(&'lock self, key: &'lock Self::Key) -> Result<Self::SLock<'lock>, Self::Error>;
 }
 
 /// Blanket implementation to allow a [`ThreadSafeCacheStore`] to behave as a
 /// [`ThreadSafeTryCacheStore`]
 impl<
-        'a,
+        'lock,
         K,
         V,
-        SL: for<'b> From<&'b XL> + 'a,
-        XL: 'a,
-        T: ThreadSafeCacheStore<'a, Key = K, Value = V, SLock<'a> = SL, XLock = XL>,
-    > ThreadSafeTryCacheStore<'a> for T
+        SL: for<'b> From<&'b XL> + 'lock,
+        XL: 'lock,
+        T: ThreadSafeCacheStore<'lock, Key = K, Value = V, SLock<'lock> = SL, XLock = XL>,
+    > ThreadSafeTryCacheStore<'lock> for T
 {
     type Key = K;
     type Value = V;
-    type SLock<'b>
+    type SLock<'guard>
         = SL
     where
-        'a: 'b;
+        'lock: 'guard;
     type XLock = XL;
     type Error = ();
 
-    fn ts_try_get(&'a self, handle: &Self::SLock<'a>) -> Result<Option<Self::Value>, Self::Error> {
+    fn ts_try_get(
+        &'lock self,
+        handle: &Self::SLock<'lock>,
+    ) -> Result<Option<Self::Value>, Self::Error> {
         Ok(self.ts_get(handle))
     }
 
     fn ts_try_set(
-        &'a self,
+        &'lock self,
         handle: &mut Self::XLock,
         value: &Self::Value,
     ) -> Result<(), Self::Error> {
@@ -186,15 +195,15 @@ impl<
         Ok(self.ts_set(handle, value))
     }
 
-    fn ts_try_exists(&'a self, handle: &Self::SLock<'a>) -> Result<bool, Self::Error> {
+    fn ts_try_exists(&'lock self, handle: &Self::SLock<'lock>) -> Result<bool, Self::Error> {
         Ok(self.ts_exists(handle))
     }
 
-    fn ts_try_slock(&'a self, key: &'a Self::Key) -> Result<Self::SLock<'a>, Self::Error> {
+    fn ts_try_slock(&'lock self, key: &'lock Self::Key) -> Result<Self::SLock<'lock>, Self::Error> {
         Ok(self.ts_slock(key))
     }
 
-    fn ts_try_xlock(&'a self, key: &'a Self::Key) -> Result<Self::XLock, Self::Error> {
+    fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
         Ok(self.ts_xlock(key))
     }
 }
@@ -376,13 +385,13 @@ pub mod dumb_wrappers {
     /// Generic enum for a shared key, can hold a [`RwLockWriteGuard`] or [`RwLockReadGuard`] as
     /// both should be possible to be used for shared access, along with the key accessed itself.
     /// Hacky solution for the [`DumbTryThreadSafeWrapper`]
-    pub enum RwLockAnyGuard<'a, 'b, 'c, T, K> {
-        Read((RwLockReadGuard<'a, T>, &'b K)),
-        Write(&'c (RwLockWriteGuard<'a, T>, &'b K)),
+    pub enum RwLockAnyGuard<'lock, 'guard, T, K> {
+        Read((RwLockReadGuard<'lock, T>, &'lock K)),
+        Write(&'guard (RwLockWriteGuard<'lock, T>, &'lock K)),
     }
 
-    impl<'b, T, K> RwLockAnyGuard<'_, 'b, '_, T, K> {
-        fn get_key(&self) -> &'b K {
+    impl<'lock, T, K> RwLockAnyGuard<'lock, '_, T, K> {
+        fn get_key(&self) -> &'lock K {
             match self {
                 Self::Read((_, k)) => k,
                 Self::Write((_, k)) => k,
@@ -390,23 +399,21 @@ pub mod dumb_wrappers {
         }
     }
 
-    impl<'a, 'b, T, K> From<(RwLockReadGuard<'a, T>, &'b K)> for RwLockAnyGuard<'a, 'b, '_, T, K> {
-        fn from(value: (RwLockReadGuard<'a, T>, &'b K)) -> Self {
+    impl<'lock, T, K> From<(RwLockReadGuard<'lock, T>, &'lock K)> for RwLockAnyGuard<'lock, '_, T, K> {
+        fn from(value: (RwLockReadGuard<'lock, T>, &'lock K)) -> Self {
             Self::Read(value)
         }
     }
 
-    impl<'a, 'b, 'c, T, K> From<&'c (RwLockWriteGuard<'c, T>, &'b K)>
-        for RwLockAnyGuard<'a, 'b, 'c, T, K>
-    where
-        'c: 'a,
+    impl<'lock, 'guard, T, K> From<&'guard (RwLockWriteGuard<'lock, T>, &'lock K)>
+        for RwLockAnyGuard<'lock, 'guard, T, K>
     {
-        fn from(value: &'c (RwLockWriteGuard<'c, T>, &'b K)) -> Self {
+        fn from(value: &'guard (RwLockWriteGuard<'lock, T>, &'lock K)) -> Self {
             Self::Write(value)
         }
     }
 
-    impl<T, K> Deref for RwLockAnyGuard<'_, '_, '_, T, K> {
+    impl<T, K> Deref for RwLockAnyGuard<'_, '_, T, K> {
         type Target = T;
 
         fn deref(&self) -> &Self::Target {
@@ -417,19 +424,21 @@ pub mod dumb_wrappers {
         }
     }
 
-    impl<'b, K, V, E, S> ThreadSafeTryCacheStore<'b> for DumbTryThreadSafeWrapper<'b, K, V, E, S>
+    impl<'lock, K, V, E, S> ThreadSafeTryCacheStore<'lock>
+        for DumbTryThreadSafeWrapper<'lock, K, V, E, S>
     where
-        Self: 'b,
-        S: TryCacheStore<Key = K, Value = V, Error = E> + 'b,
-        E: From<PoisonError<RwLockReadGuard<'b, S>>> + From<PoisonError<RwLockWriteGuard<'b, S>>>,
+        Self: 'lock,
+        S: TryCacheStore<Key = K, Value = V, Error = E> + 'lock,
+        E: From<PoisonError<RwLockReadGuard<'lock, S>>>
+            + From<PoisonError<RwLockWriteGuard<'lock, S>>>,
     {
         type Key = K;
         type Value = V;
-        type SLock<'a>
-            = RwLockAnyGuard<'b, 'b, 'a, S, Self::Key>
+        type SLock<'guard>
+            = RwLockAnyGuard<'lock, 'guard, S, Self::Key>
         where
-            'b: 'a;
-        type XLock = (RwLockWriteGuard<'b, S>, &'b Self::Key);
+            'lock: 'guard;
+        type XLock = (RwLockWriteGuard<'lock, S>, &'lock Self::Key);
         type Error = E;
 
         fn ts_try_get(&self, handle: &Self::SLock<'_>) -> Result<Option<Self::Value>, Self::Error> {
@@ -448,11 +457,14 @@ pub mod dumb_wrappers {
             handle.try_exists(handle.get_key())
         }
 
-        fn ts_try_slock(&'b self, key: &'b Self::Key) -> Result<Self::SLock<'b>, Self::Error> {
+        fn ts_try_slock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::SLock<'lock>, Self::Error> {
             Ok((self.store.read()?, key).into())
         }
 
-        fn ts_try_xlock(&'b self, key: &'b Self::Key) -> Result<Self::XLock, Self::Error> {
+        fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
             Ok((self.store.write()?, key))
         }
     }

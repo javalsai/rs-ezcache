@@ -1,3 +1,6 @@
+//! Several implementations of cache stores for common use cases, all of require std for now:
+//! - [`MemoryStore`]: So just HashMap cool wrapping around. You'll see it most for examples.
+
 use crate::__internal_prelude::*;
 
 use core::{borrow::Borrow, hash::Hash};

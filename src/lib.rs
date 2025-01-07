@@ -62,6 +62,7 @@
 extern crate std;
 
 pub mod generative;
+#[cfg(feature = "std")]
 pub mod stores;
 #[cfg(feature = "thread-safe")]
 pub mod thread_safe;
