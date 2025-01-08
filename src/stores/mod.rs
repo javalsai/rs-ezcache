@@ -274,7 +274,7 @@ pub mod file_stores {
         collections::HashMap,
         fs::{File, OpenOptions},
         io::{Read, Write},
-        path::PathBuf,
+        path::{Path, PathBuf},
         string::String,
         sync::{Mutex, PoisonError, RwLock, RwLockWriteGuard, TryLockError},
         vec,
@@ -332,6 +332,20 @@ pub mod file_stores {
     }
 
     impl<K: CustomHash, V> ThreadSafeFileStore<K, V> {
+        /// Makes a new instance from a directory path
+        /// Doesn't perform any file lock, you must ensure this path isn't used by other processes
+        /// or even this one itself.
+        pub fn new_on(path: impl AsRef<Path> + TryInto<PathBuf>) -> std::io::Result<Self> {
+            std::fs::create_dir_all(&path)?;
+            Ok(Self {
+                path: path.try_into().map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "error converting from path")
+                })?,
+                cache: Mutex::new(HashMap::new()),
+                value_phantom: PhantomData,
+            })
+        }
+
         fn get_path_of(&self, key: &K) -> PathBuf {
             self.path.join(key.hash())
         }
