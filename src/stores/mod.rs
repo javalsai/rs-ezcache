@@ -49,12 +49,17 @@
 //! assert_eq!(value, Some(String::from("value in thread")));
 //! ```
 
-use crate::{__internal_prelude::*, thread_safe::dumb_wrappers::EmptyDumbError};
+use crate::__internal_prelude::*;
+
+#[cfg(feature = "thread-safe")]
+use crate::thread_safe::dumb_wrappers::EmptyDumbError;
+#[cfg(feature = "thread-safe")]
+use std::sync::{Mutex, RwLock};
 
 use core::{borrow::Borrow, hash::Hash, ops::Deref};
 use std::{
     collections::HashMap,
-    sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
 #[derive(Default)]
@@ -125,10 +130,12 @@ impl<T> Deref for RwLockAnyGuard<'_, '_, T> {
 /// as the hashmap itself doesn't move the value or the entry gets deleted, nothing should happen,
 /// and I think both can't happen at least now.
 #[derive(Default)]
+#[cfg(feature = "thread-safe")]
 pub struct ThreadSafeMemoryStore<K, V> {
     cache: Mutex<HashMap<K, RwLock<Option<V>>>>,
 }
 
+#[cfg(feature = "thread-safe")]
 impl<K: Hash + Eq, V> ThreadSafeMemoryStore<K, V> {
     pub fn new(cache: HashMap<K, V>) -> Self {
         Self {
@@ -142,6 +149,7 @@ impl<K: Hash + Eq, V> ThreadSafeMemoryStore<K, V> {
     }
 }
 
+#[cfg(feature = "thread-safe")]
 impl<'lock, K: Hash + Eq + Sized + Clone, V: Clone> ThreadSafeTryCacheStore<'lock>
     for ThreadSafeMemoryStore<K, V>
 where
@@ -250,6 +258,210 @@ where
 
         Ok(lock)
     }
+}
+
+// ------- File Store
+#[cfg(feature = "file-stores")]
+pub mod file_stores {
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    use serde::{de::DeserializeOwned, Serialize};
+    use sha2::{Digest, Sha256};
+
+    use crate::{__internal_prelude::*, thread_safe::dumb_wrappers::RwLockAnyGuardKey};
+
+    use core::hash::Hash;
+    use std::{
+        collections::HashMap,
+        fs::{File, OpenOptions},
+        io::{Read, Write},
+        path::PathBuf,
+        string::String,
+        sync::{Mutex, PoisonError, RwLock, RwLockWriteGuard, TryLockError},
+        vec,
+    };
+
+    /// Error Type used by the File Based cache store
+    pub enum ThreadSafeFileStoreError {
+        Io(std::io::Error),
+        Bincode(bincode::Error),
+        Poisoned,
+        WouldBlock,
+    }
+    impl From<bincode::Error> for ThreadSafeFileStoreError {
+        fn from(value: bincode::Error) -> Self {
+            Self::Bincode(value)
+        }
+    }
+    impl From<std::io::Error> for ThreadSafeFileStoreError {
+        fn from(value: std::io::Error) -> Self {
+            Self::Io(value)
+        }
+    }
+    impl<T> From<PoisonError<T>> for ThreadSafeFileStoreError {
+        fn from(_: PoisonError<T>) -> Self {
+            Self::Poisoned
+        }
+    }
+
+    impl<T> From<TryLockError<T>> for ThreadSafeFileStoreError {
+        fn from(value: TryLockError<T>) -> Self {
+            match value {
+                TryLockError::Poisoned(_) => Self::Poisoned,
+                TryLockError::WouldBlock => Self::WouldBlock,
+            }
+        }
+    }
+
+    /// Custom trait used for filename hashing
+    pub trait CustomHash {
+        fn hash(&self) -> String;
+    }
+    impl<T: AsRef<[u8]>> CustomHash for T {
+        fn hash(&self) -> String {
+            let mut hasher = Sha256::new();
+            hasher.update(self);
+            BASE64_STANDARD.encode(hasher.finalize().as_slice())
+        }
+    }
+
+    /// Thread safe store based on files
+    pub struct ThreadSafeFileStore<K, V> {
+        path: PathBuf,
+        cache: Mutex<HashMap<K, RwLock<()>>>,
+        value_phantom: PhantomData<V>,
+    }
+
+    impl<K: CustomHash, V> ThreadSafeFileStore<K, V> {
+        fn get_path_of(&self, key: &K) -> PathBuf {
+            self.path.join(key.hash())
+        }
+    }
+
+    impl<'lock, K: Clone + Hash + Eq + CustomHash, V: Clone + Serialize + DeserializeOwned>
+        ThreadSafeTryCacheStore<'lock> for ThreadSafeFileStore<K, V>
+    where
+        Self: 'lock,
+    {
+        type Key = K;
+        type Value = V;
+        type Error = ThreadSafeFileStoreError;
+        type SLock<'guard>
+            = RwLockAnyGuardKey<'lock, 'guard, (), K>
+        where
+            'lock: 'guard;
+        type XLock = (RwLockWriteGuard<'lock, ()>, &'lock K);
+
+        fn ts_try_get(
+            &'lock self,
+            handle: &Self::SLock<'_>,
+        ) -> Result<Option<Self::Value>, Self::Error> {
+            let path = self.get_path_of(handle.get_key());
+            let mut buf = vec![];
+            File::open(path)?.read_to_end(&mut buf)?;
+            Ok(bincode::deserialize(buf.as_slice()).map(Some)?)
+        }
+
+        fn ts_try_set(
+            &'lock self,
+            handle: &mut Self::XLock,
+            value: &Self::Value,
+        ) -> Result<(), Self::Error> {
+            let serialized = bincode::serialize(&value)?;
+
+            let path = self.get_path_of(handle.1);
+            let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
+            file.write_all(&serialized)?;
+            Ok(())
+        }
+
+        fn ts_try_exists(&'lock self, handle: &Self::SLock<'_>) -> Result<bool, Self::Error> {
+            let path = self.get_path_of(handle.get_key());
+            Ok(std::fs::metadata(path)?.is_file())
+        }
+
+        fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
+            let mut cache_lock = self.cache.lock()?;
+            let value = match cache_lock.get(key) {
+                Some(thing) => thing,
+                None => {
+                    cache_lock.insert(key.clone(), Default::default());
+                    cache_lock.get(key).unwrap()
+                }
+            };
+
+            // Detach the lock itself from the HashMap guard lifetime
+            let value: *const _ = value;
+            let lock: Self::XLock = unsafe { ((*value).write()?, key) };
+            drop(cache_lock);
+
+            Ok(lock)
+        }
+
+        fn ts_try_slock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::SLock<'lock>, Self::Error> {
+            let mut cache_lock = self.cache.lock()?;
+            let value = match cache_lock.get(key) {
+                Some(thing) => thing,
+                None => {
+                    cache_lock.insert(key.clone(), Default::default());
+                    cache_lock.get(key).unwrap()
+                }
+            };
+
+            // Detach the lock itself from the HashMap guard lifetime
+            let value: *const _ = value;
+            let lock: Self::SLock<'_> = unsafe { ((*value).read()?, key).into() };
+            drop(cache_lock);
+
+            Ok(lock)
+        }
+
+        fn ts_try_xlock_nblock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::XLock, Self::Error> {
+            let mut cache_lock = self.cache.lock()?;
+            let value = match cache_lock.get(key) {
+                Some(thing) => thing,
+                None => {
+                    cache_lock.insert(key.clone(), Default::default());
+                    cache_lock.get(key).unwrap()
+                }
+            };
+
+            // Detach the lock itself from the HashMap guard lifetime
+            let value: *const _ = value;
+            let lock: Self::XLock = unsafe { ((*value).try_write()?, key) };
+            drop(cache_lock);
+
+            Ok(lock)
+        }
+
+        fn ts_try_slock_nblock(
+            &'lock self,
+            key: &'lock Self::Key,
+        ) -> Result<Self::SLock<'lock>, Self::Error> {
+            let mut cache_lock = self.cache.lock()?;
+            let value = match cache_lock.get(key) {
+                Some(thing) => thing,
+                None => {
+                    cache_lock.insert(key.clone(), Default::default());
+                    cache_lock.get(key).unwrap()
+                }
+            };
+
+            // Detach the lock itself from the HashMap guard lifetime
+            let value: *const _ = value;
+            let lock: Self::SLock<'_> = unsafe { ((*value).try_read()?, key).into() };
+            drop(cache_lock);
+
+            Ok(lock)
+        }
+    }
+
+    // TODO: Some test ig
 }
 
 #[cfg(test)]

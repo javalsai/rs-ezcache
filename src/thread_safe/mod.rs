@@ -426,7 +426,7 @@ pub mod dumb_wrappers {
     }
 
     impl<'lock, T, K> RwLockAnyGuardKey<'lock, '_, T, K> {
-        fn get_key(&self) -> &'lock K {
+        pub fn get_key(&self) -> &'lock K {
             match self {
                 Self::Read((_, k)) => k,
                 Self::Write((_, k)) => k,
