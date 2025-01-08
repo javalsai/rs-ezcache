@@ -281,6 +281,7 @@ pub mod file_stores {
     };
 
     /// Error Type used by the File Based cache store
+    #[derive(Debug)]
     pub enum ThreadSafeFileStoreError {
         Io(std::io::Error),
         Bincode(bincode::Error),
@@ -383,7 +384,11 @@ pub mod file_stores {
             let serialized = bincode::serialize(&value)?;
 
             let path = self.get_path_of(handle.1);
-            let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)?;
             file.write_all(&serialized)?;
             Ok(())
         }
@@ -476,6 +481,65 @@ pub mod file_stores {
     }
 
     // TODO: Some test ig
+    #[cfg(test)]
+    mod test {
+        use std::{println, string::ToString};
+
+        use super::*;
+        use serde::{Deserialize, Serialize};
+        use tempfile::tempdir;
+
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+        struct MyValue {
+            name: String,
+            number: i32,
+        }
+
+        #[test]
+        fn test_store_and_retrieve_with_serialization() {
+            // Create a temporary directory for the store
+            let temp_dir = tempdir().expect("Failed to create temp dir");
+            let store_path = temp_dir.path().to_path_buf();
+
+            // Initialize the ThreadSafeFileStore
+            let store = ThreadSafeFileStore::<String, MyValue>::new_on(store_path)
+                .expect("Failed to create ThreadSafeFileStore");
+
+            // Define a key and value
+            let key = "test_key".to_string();
+            let value = MyValue {
+                name: "test_name".to_string(),
+                number: 42,
+            };
+
+            println!("on {temp_dir:?}");
+
+            // Write the value to the store
+            {
+                let mut xlock = store
+                    .ts_try_xlock_nblock(&key)
+                    .expect("Failed to acquire exclusive lock");
+                store
+                    .ts_try_set(&mut xlock, &value)
+                    .expect("Failed to set value");
+            }
+
+            // Retrieve the value from the store
+            {
+                let slock = store
+                    .ts_try_slock_nblock(&key)
+                    .expect("Failed to acquire shared lock");
+                let retrieved_value = store
+                    .ts_try_get(&slock)
+                    .expect("Failed to get value")
+                    .expect("Value not found");
+                assert_eq!(
+                    retrieved_value, value,
+                    "Retrieved value does not match the original"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
