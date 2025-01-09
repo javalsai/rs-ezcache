@@ -263,7 +263,7 @@ where
 // ------- File Store
 #[cfg(feature = "file-stores")]
 pub mod file_stores {
-    use base64::{prelude::BASE64_STANDARD, Engine};
+    use base64::{prelude::BASE64_URL_SAFE, Engine};
     use serde::{de::DeserializeOwned, Serialize};
     use sha2::{Digest, Sha256};
 
@@ -321,7 +321,7 @@ pub mod file_stores {
         fn hash(&self) -> String {
             let mut hasher = Sha256::new();
             hasher.update(self);
-            BASE64_STANDARD.encode(hasher.finalize().as_slice())
+            BASE64_URL_SAFE.encode(hasher.finalize().as_slice())
         }
     }
 
