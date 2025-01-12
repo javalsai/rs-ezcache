@@ -4,12 +4,12 @@
 //! - Traits to implement cache stores. Feature faillible and infallible variants.
 //! - Cache stores with default generators that activate by default when needed.
 //! - Thread safe variants of everything possible under the "thread-safe" feature.
-//! - Default cache stores implemented for filesystem, memory, etc.
+//! - Default cache stores implemented for filesystem, memory, etc. (might require some features)
 //!
 //!
 //! # Examples
-//! - [stores]
-//! - [generative]
+//! - [stores]: For examples on some common stores implemented.
+//! - [generative]: For examples on the concept of generative cache stores.
 //!
 //! # Contributing, Issues & Discussions
 //! For anything related, please consult the official repository:

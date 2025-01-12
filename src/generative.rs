@@ -13,15 +13,18 @@
 //!
 //! # Examples
 //! ```rust
-//! use ezcache::{
-//!     generative::{GenCacheStore, GenCacheStoreWrapper},
-//!     stores::MemoryStore
-//! };
-//! use ezcache::prelude::*;
-//!
-//! let very_heavy_computation = |n: &usize, ()| *n * 2;
+//! # use ezcache::{
+//! #     generative::{GenCacheStore, GenCacheStoreWrapper},
+//! #     stores::MemoryStore
+//! # };
+//! # use ezcache::prelude::*;
+//! #
+//! // This would obviously be something more complex, perhaps even handling long-awaited io
+//! let very_heavy_computation = |&n: &usize, ()| n * 2;
+//! // You wrap this around a normal store that you want
 //! let store = MemoryStore::<usize, usize>::default();
 //!
+//! // And combine them (here is where the magic happens)
 //! let mut gen_store = GenCacheStoreWrapper::new(store, very_heavy_computation);
 //!
 //! assert_eq!(gen_store.get(2), None);
@@ -30,13 +33,16 @@
 //! ```
 //!
 //! ```rust
-//! use ezcache::{
-//!     generative::{GenCacheStore, GenCacheStoreWrapper},
-//!     stores::MemoryStore
-//! };
-//! use ezcache::prelude::*;
+//! # use ezcache::{
+//! #     generative::{GenCacheStore, GenCacheStoreWrapper},
+//! #     stores::MemoryStore
+//! # };
+//! # use ezcache::prelude::*;
+//! #
+//! // We can eve pass additional arguments that we dont want to cache the keys by.
+//! // This could be a one-time source that changes but is a valid to represent the cache key.
 //!
-//! let very_heavy_computation = |n: &usize, offset: usize| *n * 2 + offset;
+//! let very_heavy_computation = |&n: &usize, offset: usize| n * 2 + offset;
 //! let store = MemoryStore::<usize, usize>::default();
 //!
 //! let mut gen_store = GenCacheStoreWrapper::new(store, very_heavy_computation);
@@ -44,11 +50,15 @@
 //! assert_eq!(gen_store.get(2), None); // Key hasn't been generated so far
 //! assert_eq!(gen_store.get_or_new(2, 0), 4); // We generate such entry
 //! assert_eq!(gen_store.get(2), Some(4)); // Now it exists
-//! assert_eq!(gen_store.get_or_new(2, 1), 4); // As it exists, it won't generate a new value
-//! assert_eq!(gen_store.gen_new(2, 1), 5); // Unless we explicitly do so
+//!
+//! // As it exists, it won't generate a new value, even if the result would change
+//! assert_eq!(gen_store.get_or_new(2, 1), 4);
+//! assert_eq!(gen_store.gen_new(2, 1), 5); // Unless we explicitly tell it to
 //! assert_eq!(gen_store.get(2), Some(5)); // And then it's saved
-//! // WARNING: Extra arguments should NOT be important for cache, should only have information
-//! // that you do NOT want to index in the underlying cache store.
+//!
+//! // WARNING: Extra arguments should NOT be important for the cache key, should only have
+//! // information that you do NOT want to index in the underlying cache store. But you still want
+//! // to pass to the generator for any reasons.
 //! ```
 
 use crate::__internal_prelude::*;

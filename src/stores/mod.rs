@@ -3,48 +3,64 @@
 //! - [`ThreadSafeMemoryStore`]: Concurrent store in memory. Uses unsafe under the hood but should
 //!   be optimized enough.
 //!
+//! With feature "file-stores":
+//! - [`ThreadSafeFileStore`][file_stores::ThreadSafeFileStore]: A thread safe cache stores that
+//!   works over files in a directory.
+//!
 //! # Examples
 //!
 //! ```rust
-//! use ezcache::{CacheStore, stores::MemoryStore};
-//!
+//! # use ezcache::{CacheStore, stores::MemoryStore};
+//! #
+//! // We create the in-memory store
 //! let mut store: MemoryStore<&'static str, String> = MemoryStore::default();
 //!
+//! // Attempting to get a inexsistent key fails.
 //! let value = store.get("key");
 //! assert_eq!(value, None);
 //!
+//! // But if we set it
 //! store.set("key", &("value".to_owned()));
+//! // And get it
 //! let value = store.get("key");
-//! assert_eq!(value, Some(String::from("value")));
+//! assert_eq!(value, Some(String::from("value"))); // Works!
 //! ```
 //!
 //! ```rust
 //! # use std::{thread, sync::Arc};
-//! use ezcache::{
-//!     TryCacheStore,
-//!     TryCacheStoreErrorMap,
-//!     stores::MemoryStore,
-//!     thread_safe::{
-//!         ThreadSafeTryCacheStore,
-//!         dumb_wrappers::{
-//!             DumbTryThreadSafeWrapper,
-//!             EmptyDumbError,
-//!         },
-//!     },
-//! };
+//! # use ezcache::{
+//! #     TryCacheStore,
+//! #     TryCacheStoreErrorMap,
+//! #     stores::MemoryStore,
+//! #     thread_safe::{
+//! #         ThreadSafeTryCacheStore,
+//! #         dumb_wrappers::{
+//! #             DumbTryThreadSafeWrapper,
+//! #             EmptyDumbError,
+//! #         },
+//! #     },
+//! # };
+//! #
+//! // Or even for multithreading contexts
 //!
+//! // We can use a normal store
 //! let memory_store: MemoryStore<(), String> = MemoryStore::default();
+//! // And we make it fallible such that
 //! let try_store: TryCacheStoreErrorMap<_, _, _, EmptyDumbError, _> =
 //!     memory_store.into();
+//! // we can wrap it around a dumb wrapper (explained in crate::thread_safe)
 //! let store = DumbTryThreadSafeWrapper::new(try_store);
 //!
+//! // We make it atomic
 //! let store = Arc::new(store);
 //! let store_clone = Arc::clone(&store);
 //!
+//! // And threads can access it without problems
 //! thread::spawn(move || {
 //!     store_clone.ts_one_try_set(&(), &String::from("value in thread"))
 //! }).join().unwrap();
 //!
+//! // Of course sharing the values within
 //! let value = store.ts_one_try_get(&()).unwrap();
 //! assert_eq!(value, Some(String::from("value in thread")));
 //! ```
