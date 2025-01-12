@@ -1,5 +1,5 @@
 //! Several implementations of cache stores for common use cases, all of require std for now:
-//! - [`MemoryStore`]: So just HashMap cool wrapping around. You'll see it most for examples.
+//! - [`MemoryStore`]: So just [`HashMap`] cool wrapping around. You'll see it most for examples.
 //! - [`ThreadSafeMemoryStore`]: Concurrent store in memory. Uses unsafe under the hood but should
 //!   be optimized enough.
 //!
@@ -69,6 +69,7 @@ pub struct MemoryStore<K, V> {
 }
 
 impl<K, V> MemoryStore<K, V> {
+    #[must_use]
     pub fn new(hashmap: HashMap<K, V>) -> Self {
         Self { cache: hashmap }
     }
@@ -137,6 +138,7 @@ pub struct ThreadSafeMemoryStore<K, V> {
 
 #[cfg(feature = "thread-safe")]
 impl<K: Hash + Eq, V> ThreadSafeMemoryStore<K, V> {
+    #[must_use]
     pub fn new(cache: HashMap<K, V>) -> Self {
         Self {
             cache: Mutex::new(
@@ -186,12 +188,11 @@ where
 
     fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
         let mut cache_lock = self.cache.lock()?;
-        let value = match cache_lock.get(key) {
-            Some(thing) => thing,
-            None => {
-                cache_lock.insert(key.clone(), Default::default());
-                cache_lock.get(key).unwrap()
-            }
+        let value = if let Some(thing) = cache_lock.get(key) {
+            thing
+        } else {
+            cache_lock.insert(key.clone(), RwLock::default());
+            cache_lock.get(key).unwrap()
         };
 
         // Detach the lock itself from the HashMap guard lifetime
@@ -204,12 +205,11 @@ where
 
     fn ts_try_slock(&'lock self, key: &'lock Self::Key) -> Result<Self::SLock<'lock>, Self::Error> {
         let mut cache_lock = self.cache.lock()?;
-        let value = match cache_lock.get(key) {
-            Some(thing) => thing,
-            None => {
-                cache_lock.insert(key.clone(), Default::default());
-                cache_lock.get(key).unwrap()
-            }
+        let value = if let Some(thing) = cache_lock.get(key) {
+            thing
+        } else {
+            cache_lock.insert(key.clone(), RwLock::default());
+            cache_lock.get(key).unwrap()
         };
 
         // Detach the lock itself from the HashMap guard lifetime
@@ -222,12 +222,11 @@ where
 
     fn ts_try_xlock_nblock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
         let mut cache_lock = self.cache.lock()?;
-        let value = match cache_lock.get(key) {
-            Some(thing) => thing,
-            None => {
-                cache_lock.insert(key.clone(), Default::default());
-                cache_lock.get(key).unwrap()
-            }
+        let value = if let Some(thing) = cache_lock.get(key) {
+            thing
+        } else {
+            cache_lock.insert(key.clone(), RwLock::default());
+            cache_lock.get(key).unwrap()
         };
 
         // Detach the lock itself from the HashMap guard lifetime
@@ -243,12 +242,11 @@ where
         key: &'lock Self::Key,
     ) -> Result<Self::SLock<'lock>, Self::Error> {
         let mut cache_lock = self.cache.lock()?;
-        let value = match cache_lock.get(key) {
-            Some(thing) => thing,
-            None => {
-                cache_lock.insert(key.clone(), Default::default());
-                cache_lock.get(key).unwrap()
-            }
+        let value = if let Some(thing) = cache_lock.get(key) {
+            thing
+        } else {
+            cache_lock.insert(key.clone(), RwLock::default());
+            cache_lock.get(key).unwrap()
         };
 
         // Detach the lock itself from the HashMap guard lifetime
@@ -336,6 +334,9 @@ pub mod file_stores {
         /// Makes a new instance from a directory path
         /// Doesn't perform any file lock, you must ensure this path isn't used by other processes
         /// or even this one itself.
+        ///
+        /// # Errors
+        /// Fails when any underlying io call does.
         pub fn new_on(path: impl AsRef<Path> + TryInto<PathBuf>) -> std::io::Result<Self> {
             std::fs::create_dir_all(&path)?;
             Ok(Self {
@@ -400,12 +401,11 @@ pub mod file_stores {
 
         fn ts_try_xlock(&'lock self, key: &'lock Self::Key) -> Result<Self::XLock, Self::Error> {
             let mut cache_lock = self.cache.lock()?;
-            let value = match cache_lock.get(key) {
-                Some(thing) => thing,
-                None => {
-                    cache_lock.insert(key.clone(), Default::default());
-                    cache_lock.get(key).unwrap()
-                }
+            let value = if let Some(thing) = cache_lock.get(key) {
+                thing
+            } else {
+                cache_lock.insert(key.clone(), RwLock::default());
+                cache_lock.get(key).unwrap()
             };
 
             // Detach the lock itself from the HashMap guard lifetime
@@ -421,12 +421,11 @@ pub mod file_stores {
             key: &'lock Self::Key,
         ) -> Result<Self::SLock<'lock>, Self::Error> {
             let mut cache_lock = self.cache.lock()?;
-            let value = match cache_lock.get(key) {
-                Some(thing) => thing,
-                None => {
-                    cache_lock.insert(key.clone(), Default::default());
-                    cache_lock.get(key).unwrap()
-                }
+            let value = if let Some(thing) = cache_lock.get(key) {
+                thing
+            } else {
+                cache_lock.insert(key.clone(), RwLock::default());
+                cache_lock.get(key).unwrap()
             };
 
             // Detach the lock itself from the HashMap guard lifetime
@@ -442,12 +441,11 @@ pub mod file_stores {
             key: &'lock Self::Key,
         ) -> Result<Self::XLock, Self::Error> {
             let mut cache_lock = self.cache.lock()?;
-            let value = match cache_lock.get(key) {
-                Some(thing) => thing,
-                None => {
-                    cache_lock.insert(key.clone(), Default::default());
-                    cache_lock.get(key).unwrap()
-                }
+            let value = if let Some(thing) = cache_lock.get(key) {
+                thing
+            } else {
+                cache_lock.insert(key.clone(), RwLock::default());
+                cache_lock.get(key).unwrap()
             };
 
             // Detach the lock itself from the HashMap guard lifetime
@@ -463,12 +461,11 @@ pub mod file_stores {
             key: &'lock Self::Key,
         ) -> Result<Self::SLock<'lock>, Self::Error> {
             let mut cache_lock = self.cache.lock()?;
-            let value = match cache_lock.get(key) {
-                Some(thing) => thing,
-                None => {
-                    cache_lock.insert(key.clone(), Default::default());
-                    cache_lock.get(key).unwrap()
-                }
+            let value = if let Some(thing) = cache_lock.get(key) {
+                thing
+            } else {
+                cache_lock.insert(key.clone(), RwLock::default());
+                cache_lock.get(key).unwrap()
             };
 
             // Detach the lock itself from the HashMap guard lifetime

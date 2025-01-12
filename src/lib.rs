@@ -45,6 +45,7 @@ pub trait CacheStore {
 
 /// Trait for a fallible cache store, analogous to [CacheStore]
 #[delegatable_trait]
+#[allow(clippy::missing_errors_doc)]
 pub trait TryCacheStore {
     type Key;
     type Value;
@@ -110,7 +111,7 @@ impl<K, V, E, ET: From<E>, S: TryCacheStore<Key = K, Value = V, Error = E>> TryC
     type Error = ET;
 
     fn try_get(&self, key: impl Borrow<Self::Key>) -> Result<Option<Self::Value>, Self::Error> {
-        self.store.try_get(key).map_err(|e| e.into())
+        self.store.try_get(key).map_err(Into::into)
     }
 
     fn try_set(
@@ -118,11 +119,11 @@ impl<K, V, E, ET: From<E>, S: TryCacheStore<Key = K, Value = V, Error = E>> TryC
         key: impl Borrow<Self::Key>,
         value: impl Borrow<Self::Value>,
     ) -> Result<(), Self::Error> {
-        self.store.try_set(key, value).map_err(|e| e.into())
+        self.store.try_set(key, value).map_err(Into::into)
     }
 
     fn try_exists(&self, key: impl Borrow<Self::Key>) -> Result<bool, Self::Error> {
-        self.store.try_exists(key).map_err(|e| e.into())
+        self.store.try_exists(key).map_err(Into::into)
     }
 }
 

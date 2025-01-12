@@ -51,6 +51,7 @@ where
 
 /// Falible thread safe generative cache store.
 #[delegatable_trait]
+#[allow(clippy::missing_errors_doc)]
 pub trait ThreadSafeTryGenCacheStore<'lock>:
     super::ThreadSafeTryCacheStore<
     'lock,
@@ -105,7 +106,7 @@ pub trait ThreadSafeTryGenCacheStore<'lock>:
 use super::ambassador_impl_ThreadSafeCacheStore;
 #[derive(Delegate)]
 #[delegate(ThreadSafeCacheStore<'lock>, target = "store")]
-/// Infallible thread safe generative cache store wrapper around a [ThreadSafeCacheStore]
+/// Infallible thread safe generative cache store wrapper around a [`ThreadSafeCacheStore`]
 /// and a generator function.
 ///
 /// One of the few unafallible thread safe wrappers.
@@ -139,8 +140,8 @@ impl<
         F: Fn(&K, A) -> V,
     > ThreadSafeGenCacheStoreWrapper<'lock, K, V, A, S, F>
 {
-    /// Make a new [ThreadSafeGenCacheStoreWrapper] from a
-    /// [ThreadSafeCacheStore] and a generator function.
+    /// Make a new [`ThreadSafeGenCacheStoreWrapper`] from a
+    /// [`ThreadSafeCacheStore`] and a generator function.
     pub fn new(store: S, generator: F) -> Self {
         Self {
             store,
@@ -213,7 +214,7 @@ impl<
 use super::ambassador_impl_ThreadSafeTryCacheStore;
 #[derive(Delegate)]
 #[delegate(ThreadSafeTryCacheStore<'lock>, target = "store")]
-/// Fallible thread safe generative cache store wrapper around a [ThreadSafeTryCacheStore]
+/// Fallible thread safe generative cache store wrapper around a [`ThreadSafeTryCacheStore`]
 /// and a generator function.
 ///
 /// Generics:
@@ -248,7 +249,7 @@ impl<
         F: Fn(&K, A) -> Result<V, E>,
     > ThreadSafeGenTryCacheStoreWrapper<'lock, K, V, E, A, S, F>
 {
-    /// Make a new [ThreadSafeGenCacheStoreWrapper] from a [ThreadSafeCacheStore] and a generator function.
+    /// Make a new [`ThreadSafeGenCacheStoreWrapper`] from a [`ThreadSafeCacheStore`] and a generator function.
     pub fn new(store: S, generator: F) -> Self {
         Self {
             store,
@@ -296,8 +297,7 @@ impl<
     > {
         self.store
             .ts_one_try_get(key)?
-            .map(Ok)
-            .unwrap_or_else(move || self.ts_try_gen(key, args))
+            .map_or_else(move || self.ts_try_gen(key, args), Ok)
     }
 
     fn ts_try_get_or_new(
@@ -312,8 +312,7 @@ impl<
         let value = self
             .store
             .ts_try_get(&(&handle).into())?
-            .map(Ok)
-            .unwrap_or_else(|| self.ts_try_gen(key, args))?;
+            .map_or_else(|| self.ts_try_gen(key, args), Ok)?;
         self.store.ts_try_set(&mut handle, &value)?;
         drop(handle);
         Ok(value)

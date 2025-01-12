@@ -18,7 +18,7 @@
 //!   dumb store with a [`RwLock`][std::sync::RwLock] *could* alloc concurrency in this case.
 //! - `ThreadA` writes `A`, `ThreadB` writes `B`: A smart store also allows both reads to be
 //!   concurrent.
-//! - `ThreadA` and ThreadB write to `A`: The smart store would block until `ThreadA` is done to
+//! - `ThreadA` and `ThreadB` write to `A`: The smart store would block until `ThreadA` is done to
 //!   allow `ThreadB` to write to it.
 //!
 //! Due to this, a smart thread safe store can become a normal [`CacheStore`], and a [`CacheStore`]
@@ -83,7 +83,7 @@ where
     /// Same as `ts_set` but it performs a one-time lock
     fn ts_one_set(&'lock self, key: &Self::Key, value: &Self::Value) {
         let mut handle = self.ts_xlock(key);
-        self.ts_set(&mut handle, value)
+        self.ts_set(&mut handle, value);
     }
     /// Same as `ts_exists` but it performs a one-time lock
     fn ts_one_exists(&'lock self, key: &Self::Key) -> bool {
@@ -104,6 +104,7 @@ where
 
 /// Trait for a thread safe fallible cache store, analogous to [ThreadSafeCacheStore]
 #[delegatable_trait]
+#[allow(clippy::missing_errors_doc)]
 pub trait ThreadSafeTryCacheStore<'lock>
 where
     Self: 'lock,
@@ -341,6 +342,7 @@ pub mod dumb_wrappers {
     use core::{convert::Infallible, marker::PhantomData};
     use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     #[derive(Debug)]
@@ -426,10 +428,10 @@ pub mod dumb_wrappers {
     }
 
     impl<'lock, T, K> RwLockAnyGuardKey<'lock, '_, T, K> {
+        #[must_use]
         pub fn get_key(&self) -> &'lock K {
             match self {
-                Self::Read((_, k)) => k,
-                Self::Write((_, k)) => k,
+                Self::Read((_, k)) | Self::Write((_, k)) => k,
             }
         }
     }

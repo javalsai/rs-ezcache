@@ -92,7 +92,7 @@ pub trait GenCacheStore:
 use super::ambassador_impl_CacheStore;
 #[derive(Delegate)]
 #[delegate(CacheStore, target = "store")]
-/// Infallible generative cache store wrapper around a [CacheStore] and a generator function.
+/// Infallible generative cache store wrapper around a [`CacheStore`] and a generator function.
 ///
 /// Generics:
 /// - `K`: Type of the key used for cache indexing.
@@ -110,7 +110,7 @@ pub struct GenCacheStoreWrapper<K, V, A, S: CacheStore<Key = K, Value = V>, F: F
 impl<K, V, A, F: Fn(&K, A) -> V, S: CacheStore<Key = K, Value = V>>
     GenCacheStoreWrapper<K, V, A, S, F>
 {
-    /// Make a new [GenCacheStoreWrapper] from a infallible store and a generator function.
+    /// Make a new [`GenCacheStoreWrapper`] from a infallible store and a generator function.
     pub fn new(store: S, generator: F) -> Self {
         Self {
             store,
@@ -156,6 +156,7 @@ impl<K, V, A, S: CacheStore<Key = K, Value = V>, F: Fn(&K, A) -> V> GenCacheStor
 
 /// Fallible generative cache store.
 #[delegatable_trait]
+#[allow(clippy::missing_errors_doc)]
 pub trait TryGenCacheStore:
     TryCacheStore<
     Key = <Self as TryGenCacheStore>::Key,
@@ -198,7 +199,7 @@ pub trait TryGenCacheStore:
 use crate::ambassador_impl_TryCacheStore;
 #[derive(Delegate)]
 #[delegate(TryCacheStore, target = "store")]
-/// Infallible generative cache store wrapper around a [CacheStore] and a generator function.
+/// Infallible generative cache store wrapper around a [`CacheStore`] and a generator function.
 ///
 /// Generics:
 /// - `K`: Type of the key used for cache indi.
@@ -224,7 +225,7 @@ pub struct TryGenCacheStoreWrapper<
 impl<K, V, E, A, F: Fn(&K, A) -> Result<V, E>, S: TryCacheStore<Key = K, Value = V, Error = E>>
     TryGenCacheStoreWrapper<K, V, E, A, S, F>
 {
-    /// Make a new [TryGenCacheStore] from a fallible store and fallible generator function.
+    /// Make a new [`TryGenCacheStore`] from a fallible store and fallible generator function.
     pub fn new(store: S, try_generator: F) -> Self {
         Self {
             store,

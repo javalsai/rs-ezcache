@@ -1,6 +1,6 @@
 # ezcache
 
-Rust library that provides building blocks to create useful and flexible cache stores. With memory and file based stores by default. It's only avaliable through this GitHub repository, tho I'll consider adding it to [crates.io](https://crates.io).
+Rust library that provides building blocks to create useful and flexible cache stores. With memory and file based stores by default. It's only available through this GitHub repository, tho I'll consider adding it to [crates.io](https://crates.io).
 
 # Features
 - Traits to implement cache stores. Feature faillible and infallible variants.
