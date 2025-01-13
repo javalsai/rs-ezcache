@@ -27,3 +27,5 @@ jobs:
 
           cargo clippy --all-features -- -W clippy::pedantic
           cargo test --all-features
+
+          # I'd run the http example if networking wasn't so unreliable...
