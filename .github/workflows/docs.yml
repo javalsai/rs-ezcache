@@ -29,14 +29,20 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build docs
-        run: cargo doc --no-deps --target-dir target/doc
+        run: cargo doc --lib --no-deps -p ezcache --target-dir target --all-features
+
+      - name: Inject index.html
+        run: |
+          echo "<!DOCTYPE html>" > target/doc/index.html
+          # https://stackoverflow.com/questions/5302663/permanent-redirect-from-github-gh-pages
+          echo '<html><head><meta charset="utf8"><title>Redirecting...</title><link rel="canonical" href="ezcache"/><meta http-equiv="refresh" content="0;url=ezcache" /></head><body><h1>Redirecting...</h1><a href="ezcache">Click here if you are not redirected.<a><script>location+="/ezcache"</script></body></html>' >> target/doc/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './target/doc'
+          path: './target/doc' # god i hate cargo nesting more than --target-dir
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

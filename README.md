@@ -15,7 +15,7 @@ Rust library that provides building blocks to create useful and flexible cache s
 
 # Documentation
 
-The library is intended to be mainly documented through native cargo docs. These are deployed automatically by github actions to https://javalsai.github.io/rs-ezcache/doc/ezcache/. That is guaranteed to have the most updated information, so consider checking it out before relying on anything said elsewhere, it's likely outdated.
+The library is intended to be mainly documented through native cargo docs. These are deployed automatically by github actions to <https://javalsai.github.io/rs-ezcache/>. That is guaranteed to have the most updated information, so consider checking it out before relying on anything said elsewhere, it's likely outdated.
 
 # Contributing
 
