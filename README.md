@@ -1,3 +1,8 @@
+[![License](https://badgen.net/github/license/javalsai/rs-ezcache)](https://github.com/javalsai/rs-ezcache/blob/master/LICENSE)
+[![Branches](https://badgen.net/github/branches/javalsai/rs-ezcache)](https://github.com/javalsai/rs-ezcache)
+[![Latest Release](https://badgen.net/github/release/javalsai/rs-ezcache)](https://github.com/javalsai/rs-ezcache/releases)
+[![CI Runs](https://badgen.net/github/checks/javalsai/rs-ezcache)](https://github.com/javalsai/rs-ezcache/actions)
+
 # ezcache
 
 Rust library that provides building blocks to create useful and flexible cache stores. With memory and file based stores by default. It's only available through this GitHub repository, tho I'll consider adding it to [crates.io](https://crates.io).
