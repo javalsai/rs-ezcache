@@ -27,5 +27,7 @@ nightly = []
 default = ["std", "thread-safe", "file-stores"]
 
 [dev-dependencies]
+rand = "0.8.5"
 rayon = "1.10.0"
+reqwest = { version = "0.12.12", features = ["blocking"] }
 tempfile = "3.15.0"

@@ -145,6 +145,9 @@ pub mod prelude {
     //! imported elements from other crates.
 
     // pub use crate::generative::{GenCacheStore, TryGenCacheStore};
+    pub use crate::generative::{TryGenCacheStore, TryGenCacheStoreWrapper};
+    #[cfg(feature = "std")]
+    pub use crate::stores::MemoryStore;
     #[cfg(feature = "thread-safe")]
     pub use crate::thread_safe::ThreadSafeTryCacheStore;
     pub use crate::{CacheStore, TryCacheStore};

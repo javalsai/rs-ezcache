@@ -86,7 +86,14 @@ pub struct MemoryStore<K, V> {
 
 impl<K, V> MemoryStore<K, V> {
     #[must_use]
-    pub fn new(hashmap: HashMap<K, V>) -> Self {
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_hashmap(hashmap: HashMap<K, V>) -> Self {
         Self { cache: hashmap }
     }
 }
