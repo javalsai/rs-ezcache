@@ -102,7 +102,7 @@ where
     fn ts_slock_nblock(&'lock self, key: &Self::Key) -> Self::SLock<'lock>;
 }
 
-/// Trait for a thread safe fallible cache store, analogous to [ThreadSafeCacheStore]
+/// Trait for a thread safe fallible cache store, analogous to []
 #[delegatable_trait]
 #[allow(clippy::missing_errors_doc)]
 pub trait ThreadSafeTryCacheStore<'lock>
@@ -352,6 +352,19 @@ pub mod dumb_wrappers {
         Poisoned,
         WouldBlock,
     }
+    impl std::error::Error for EmptyDumbError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            None
+        }
+    }
+    impl std::fmt::Display for EmptyDumbError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self {
+                Self::Poisoned => writeln!(f, "poisoned lock"),
+                Self::WouldBlock => writeln!(f, "locking would block"),
+            }
+        }
+    }
     impl From<Infallible> for EmptyDumbError {
         fn from(_: Infallible) -> Self {
             unreachable!()
@@ -522,5 +535,43 @@ pub mod dumb_wrappers {
         ) -> Result<Self::XLock, Self::Error> {
             Ok((self.store.try_write()?, key))
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "std")]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::prelude::*;
+    use crate::stores::MemoryStore;
+    use crate::TryCacheStoreErrorMap;
+
+    use super::dumb_wrappers::{DumbTryThreadSafeWrapper, EmptyDumbError};
+    use rayon::iter::{ParallelBridge, ParallelIterator};
+
+    #[test]
+    fn write_1k_threads_same_key() {
+        let fstore: TryCacheStoreErrorMap<_, _, _, EmptyDumbError, _> =
+            MemoryStore::default().into();
+        let store: DumbTryThreadSafeWrapper<(), usize, EmptyDumbError, _> =
+            DumbTryThreadSafeWrapper::new(fstore);
+
+        let store = Arc::new(store);
+        let store_clone = Arc::clone(&store);
+
+        let n = 1000;
+
+        _ = (0..n).par_bridge().try_for_each(move |_| {
+            let store = &store_clone;
+
+            let mut handle = store.ts_try_xlock(&()).ok()?;
+            let value = store.ts_try_get(&(&handle).into()).ok()?.unwrap_or(0);
+            store.ts_try_set(&mut handle, &(value + 1)).ok()?;
+            drop(handle);
+            Some(())
+        });
+
+        assert_eq!(store.ts_one_try_get(&()).unwrap(), Some(n));
     }
 }

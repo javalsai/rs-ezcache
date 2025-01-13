@@ -110,6 +110,7 @@ impl<K: Hash + Eq + Sized + Clone, V: Clone> CacheStore for MemoryStore<K, V> {
 }
 
 /// Wrapper around a [`RwLockReadGuard`] and a [`RwLockWriteGuard`] to allow any to be used.
+#[derive(Debug)]
 pub enum RwLockAnyGuard<'lock, 'guard, T> {
     Read(RwLockReadGuard<'lock, T>),
     Write(&'guard RwLockWriteGuard<'lock, T>),
@@ -302,6 +303,26 @@ pub mod file_stores {
         Poisoned,
         WouldBlock,
     }
+    impl std::error::Error for ThreadSafeFileStoreError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match self {
+                Self::Io(err) => Some(err),
+                Self::Bincode(err) => Some(err),
+                _ => None,
+            }
+        }
+    }
+    impl std::fmt::Display for ThreadSafeFileStoreError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self {
+                Self::Io(err) => writeln!(f, "io error: {err}"),
+                Self::Bincode(err) => writeln!(f, "bincode error: {err}"),
+                Self::Poisoned => writeln!(f, "poisoned lock"),
+                Self::WouldBlock => writeln!(f, "locking would block"),
+            }
+        }
+    }
+
     impl From<bincode::Error> for ThreadSafeFileStoreError {
         fn from(value: bincode::Error) -> Self {
             Self::Bincode(value)
@@ -495,7 +516,7 @@ pub mod file_stores {
 
     // TODO: Some test ig
     #[cfg(test)]
-    mod test {
+    mod tests {
         use std::{println, string::ToString};
 
         use super::*;
@@ -509,7 +530,7 @@ pub mod file_stores {
         }
 
         #[test]
-        fn test_store_and_retrieve_with_serialization() {
+        fn serialization_set_get() {
             // Create a temporary directory for the store
             let temp_dir = tempdir().expect("Failed to create temp dir");
             let store_path = temp_dir.path().to_path_buf();
@@ -556,26 +577,52 @@ pub mod file_stores {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{ThreadSafeMemoryStore, ThreadSafeTryCacheStore};
 
     #[test]
-    fn xlock_2_diff_keys() {
+    fn xlock_diff_keys() {
         let store = ThreadSafeMemoryStore::<usize, usize>::default();
 
-        let x1 = store.ts_try_xlock_nblock(&0).expect("to lock first key");
-        let x2 = store.ts_try_xlock_nblock(&1).expect("to lock second key");
+        let x1 = store.ts_try_xlock_nblock(&0).expect("to xlock first key");
+        let x2 = store.ts_try_xlock_nblock(&1).expect("to xlock second key");
         drop((x1, x2));
     }
 
     #[test]
-    fn xlock_2_same_keys() {
+    fn xlock_same_key() {
         let store = ThreadSafeMemoryStore::<usize, usize>::default();
 
-        let x1 = store.ts_try_xlock_nblock(&0).expect("to lock first key");
+        let x1 = store.ts_try_xlock_nblock(&0).expect("to lock xfirst key");
         let x2 = store
             .ts_try_xlock_nblock(&0)
-            .expect_err("to not lock second key");
+            .expect_err("to not xlock first key");
         drop((x1, x2));
+        let x2 = store
+            .ts_try_xlock_nblock(&0)
+            .expect("to re-xlock first key");
+        drop(x2);
     }
+
+    #[test]
+    fn slock_same_key() {
+        let store = ThreadSafeMemoryStore::<usize, usize>::default();
+
+        let s1 = store.ts_try_slock_nblock(&0).expect("to slock first key");
+        let s2 = store
+            .ts_try_slock_nblock(&0)
+            .expect("to also slock first key");
+        drop((s1, s2));
+    }
+
+    // #[test]
+    // fn xlock_slock_same_key() {
+    // 	let store = ThreadSafeMemoryStore::<usize, usize>::default();
+
+    // 	let x1 = store.ts_try_slock_nblock(&0).expect("to xlock first key");
+    // 	let s2 = store
+    //     	.ts_try_slock_nblock(&0)
+    //     	.expect_err("to not slock first key");
+    // 	drop((x1, s2));
+    // }
 }
