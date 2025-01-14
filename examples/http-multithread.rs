@@ -106,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let a = Instant::now();
             let value = store.ts_try_get_or_new(url, (&client,this_bar.clone()))?;
             let b = Instant::now();
+            #[allow(clippy::cast_precision_loss)]
             let size = normalize_len(value.len() as f32);
             let pre_hash_msg = format!(
                 "- downloaded \x1b[35m{size}\x1b[0m in \x1b[35m{:?}\x1b[0m",
@@ -119,7 +120,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .finalize()
                 .into_iter()
                 .fold(String::new(), |acc, b| acc + &format!("{b:X}"));
-            #[allow(clippy::cast_precision_loss)]
             let hash_b = Instant::now();
 
             this_bar.set_message(format!(
