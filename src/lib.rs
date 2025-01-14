@@ -149,7 +149,10 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::stores::MemoryStore;
     #[cfg(feature = "thread-safe")]
-    pub use crate::thread_safe::ThreadSafeTryCacheStore;
+    pub use crate::thread_safe::{
+        generative::{ThreadSafeGenTryCacheStoreWrapper, ThreadSafeTryGenCacheStore},
+        ThreadSafeTryCacheStore,
+    };
     pub use crate::{CacheStore, TryCacheStore};
 }
 

@@ -562,15 +562,18 @@ mod tests {
 
         let n = 1000;
 
-        _ = (0..n).par_bridge().try_for_each(move |_| {
-            let store = &store_clone;
+        (0..n)
+            .par_bridge()
+            .try_for_each(move |_| {
+                let store = &store_clone;
 
-            let mut handle = store.ts_try_xlock(&()).ok()?;
-            let value = store.ts_try_get(&(&handle).into()).ok()?.unwrap_or(0);
-            store.ts_try_set(&mut handle, &(value + 1)).ok()?;
-            drop(handle);
-            Some(())
-        });
+                let mut handle = store.ts_try_xlock(&()).ok()?;
+                let value = store.ts_try_get(&(&handle).into()).ok()?.unwrap_or(0);
+                store.ts_try_set(&mut handle, &(value + 1)).ok()?;
+                drop(handle);
+                Some(())
+            })
+            .expect("some thread failed");
 
         assert_eq!(store.ts_one_try_get(&()).unwrap(), Some(n));
     }
