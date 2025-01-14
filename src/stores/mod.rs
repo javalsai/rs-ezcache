@@ -803,7 +803,7 @@ pub mod file_stores {
 
             assert_eq!(
                 store
-                    .ts_one_try_get(&String::from("key that doesnt exist"))
+                    .ts_one_try_get(&String::from("key that doesn't exist"))
                     .expect("to not fail"),
                 None
             );
