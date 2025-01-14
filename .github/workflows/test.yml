@@ -30,4 +30,4 @@ jobs:
 
           # I'd run the http example if networking wasn't so unreliable...
           cargo clippy --example http -- -W clippy::pedantic
-          cargo clippy --example http-mutithreaad -- -W clippy::pedantic
+          cargo clippy --example http-mutithread -- -W clippy::pedantic
