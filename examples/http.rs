@@ -68,6 +68,7 @@ fn main() {
             .finalize()
             .into_iter()
             .fold(String::new(), |acc, b| acc + &format!("{b:X}"));
+        #[allow(clippy::cast_precision_loss)]
         let size = normalize_len(value.len() as f32);
 
         println!(
