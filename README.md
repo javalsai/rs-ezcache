@@ -5,7 +5,9 @@
 
 # ezcache
 
-Rust library that provides building blocks to create useful and flexible cache stores. With memory and file based stores by default. It's only available through this GitHub repository, tho I'll consider adding it to [crates.io](https://crates.io).
+Rust library that provides building blocks to create useful and flexible cache stores. With memory and file based stores by default. Avaliable at:
+* [GitHub](https://github.com/javalsai/rs-ezcache)
+* [crates.io](https://crates.io/crates/ezcache).
 
 # Features
 - Traits to implement cache stores. Feature faillible and infallible variants.
@@ -15,7 +17,7 @@ Rust library that provides building blocks to create useful and flexible cache s
 
 # Documentation
 
-The library is intended to be mainly documented through native cargo docs. These are deployed automatically by github actions to <https://javalsai.github.io/rs-ezcache/>. That is guaranteed to have the most updated information, so consider checking it out before relying on anything said elsewhere, it's likely outdated.
+The library is intended to be mainly documented through native cargo docs. These are deployed automatically by github actions to <https://javalsai.github.io/rs-ezcache/>. Those are guaranteed to have the latest information, so consider checking those first as they are the most reliable source.
 
 # Contributing
 
@@ -23,9 +25,10 @@ Feel free to open any issue, fork, contribute, open a discussion... for anything
 
 # Features
 
-The library aims to be as flexible as possible, potentially sacrificing some performance by default. For this reason there are a few features that you can use:
-* `std*`: Enables std features, provides most of the default stuff, without it you are quite limited. Without it, you might even be able to use this in embedded.
+The library aims to be as flexible as possible, potentially sacrificing some performance by default (as little as possible). For this reason there are a few features that you can use:
+* `std*`: Enables std features, provides most of the default stuff, without it you are quite limited, but you might even be able to use this in embedded (I don't see why though).
 * `thread-safe*`: Adds all the thread safe traits and wrappers.
-* `nightly`: Enables nightly features.
+* `file-stores*`: Enables file stores, depends on a few other crates.
+* `nightly`: Enables nightly features, this library is completely std at the current moment however.
 
 > Features marked with `*` are enabled by default

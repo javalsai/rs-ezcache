@@ -1,6 +1,6 @@
 [package]
 name = "ezcache"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["javalsai <javalsai@proton.me>"]
 description = "Easy and flexible cache library for Rust"
 edition = "2021"
