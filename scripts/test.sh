@@ -5,11 +5,17 @@ MYSELF=$(realpath "$0");
 MYDIR=$(dirname "$MYSELF");
 
 FLAGS=${FLAGS:-"-Dclippy::pedantic"}
+DOC_DIR=$(mktemp -d -t ezcache-tmp-docs.XXXXXX)
 
 set -x;
 
 (
     cd "$MYDIR"
+
+    if [ "${SKIP_DOCS:-0}" -eq 0 ]; then
+        cargo doc --lib --no-deps -p ezcache --target-dir "$DOC_DIR" --all-features
+        rm -r "$DOC_DIR"
+    fi
 
     # shellcheck disable=2086
     cargo clippy -- $FLAGS

@@ -7,7 +7,7 @@
 //! - [`ThreadSafeFileStore`][file_stores::ThreadSafeFileStore]: A thread safe cache stores that
 //!   works over files in a directory.
 //! - [`ThreadSafeFileStoreSerializable`][file_stores::ThreadSafeFileStoreSerializable]: Same as
-//!   [`ThreadSafeFileStore`] BUT it serializes structs.
+//!   [`ThreadSafeFileStore`][file_stores::ThreadSafeFileStore] BUT it serializes structs.
 //!
 //! # Examples
 //!
