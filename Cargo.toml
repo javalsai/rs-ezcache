@@ -5,6 +5,7 @@ authors = ["javalsai <javalsai@proton.me>"]
 description = "Easy and flexible cache library for Rust"
 edition = "2021"
 license = "GPL-2.0-only"
+homepage = "https://github.com/javalsai/rs-ezcache"
 repository = "https://github.com/javalsai/rs-ezcache"
 documentation = "https://javalsai.github.io/rs-ezcache/"
 readme = "README.md"
