@@ -222,6 +222,8 @@ use super::ambassador_impl_ThreadSafeTryCacheStore;
 /// - `V`: Type of the value stored in the cache store.
 /// - `E`: Error type.
 /// - `A`: Type of additional arguments of the generator function.
+/// - `StErr`: Error type of the store.
+/// - `FnErr`: Error type of the function.
 /// - `S`: [`ThreadSafeCacheStore`] which this wraps around.
 /// - `F`: [`Fn<&K, A>`] with `V` return generator function.
 pub struct ThreadSafeGenTryCacheStoreWrapper<
@@ -230,8 +232,10 @@ pub struct ThreadSafeGenTryCacheStoreWrapper<
     V,
     E,
     A,
-    S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = E>,
-    F: Fn(&K, A) -> Result<V, E> + 'lock,
+    StErr: Into<E> + 'lock,
+    FnErr: Into<E> + 'lock,
+    S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = StErr>,
+    F: Fn(&K, A) -> Result<V, FnErr> + 'lock,
 > {
     pub store: S,
     pub generator: F,
@@ -245,9 +249,11 @@ impl<
         V,
         E,
         A,
-        S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = E>,
-        F: Fn(&K, A) -> Result<V, E>,
-    > ThreadSafeGenTryCacheStoreWrapper<'lock, K, V, E, A, S, F>
+        StErr: Into<E> + 'lock,
+        FnErr: Into<E> + 'lock,
+        S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = StErr>,
+        F: Fn(&K, A) -> Result<V, FnErr>,
+    > ThreadSafeGenTryCacheStoreWrapper<'lock, K, V, E, A, StErr, FnErr, S, F>
 {
     /// Make a new [`ThreadSafeGenCacheStoreWrapper`] from a [`ThreadSafeCacheStore`] and a generator function.
     pub fn new(store: S, generator: F) -> Self {
@@ -266,10 +272,12 @@ impl<
         V: Clone,
         E,
         A,
-        S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = E>,
-        F: Fn(&K, A) -> Result<V, E>,
+        StErr: Into<E> + 'lock,
+        FnErr: Into<E> + 'lock,
+        S: super::ThreadSafeTryCacheStore<'lock, Key = K, Value = V, Error = StErr>,
+        F: Fn(&K, A) -> Result<V, FnErr>,
     > ThreadSafeTryGenCacheStore<'lock>
-    for ThreadSafeGenTryCacheStoreWrapper<'lock, K, V, E, A, S, F>
+    for ThreadSafeGenTryCacheStoreWrapper<'lock, K, V, E, A, StErr, FnErr, S, F>
 {
     type Key = K;
     type Value = V;
@@ -284,7 +292,7 @@ impl<
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Value,
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Error,
     > {
-        (self.generator)(key, args)
+        (self.generator)(key, args).map_err(Into::into)
     }
 
     fn ts_try_get_or_gen(
@@ -296,7 +304,8 @@ impl<
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Error,
     > {
         self.store
-            .ts_one_try_get(key)?
+            .ts_one_try_get(key)
+            .map_err(Into::into)?
             .map_or_else(move || self.ts_try_gen(key, args), Ok)
     }
 
@@ -308,12 +317,15 @@ impl<
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Value,
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Error,
     > {
-        let mut handle = self.ts_try_xlock(key)?;
+        let mut handle = self.ts_try_xlock(key).map_err(Into::into)?;
         let value = self
             .store
-            .ts_try_get(&(&handle).into())?
+            .ts_try_get(&(&handle).into())
+            .map_err(Into::into)?
             .map_or_else(|| self.ts_try_gen(key, args), Ok)?;
-        self.store.ts_try_set(&mut handle, &value)?;
+        self.store
+            .ts_try_set(&mut handle, &value)
+            .map_err(Into::into)?;
         drop(handle);
         Ok(value)
     }
@@ -327,7 +339,7 @@ impl<
         <Self as ThreadSafeTryGenCacheStore<'lock>>::Error,
     > {
         let value = self.ts_try_gen(key, args)?;
-        self.store.ts_one_try_set(key, &value)?;
+        self.store.ts_one_try_set(key, &value).map_err(Into::into)?;
         Ok(value)
     }
 }

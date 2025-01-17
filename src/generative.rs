@@ -216,6 +216,7 @@ use crate::ambassador_impl_TryCacheStore;
 /// - `V`: Type of the value stored in the cache store.
 /// - `E`: Error type used for [`Result`]s
 /// - `A`: Type of additional arguments of the generator function.
+/// - `FnErr`: Error type of the function.
 /// - `S`: [`CacheStore`] which this wraps around.
 /// - `F`: [`Fn<&K, A>`] with  `V` return generator function.
 pub struct TryGenCacheStoreWrapper<
@@ -223,8 +224,9 @@ pub struct TryGenCacheStoreWrapper<
     V,
     E,
     A,
+    FnErr: Into<E>,
     S: TryCacheStore<Key = K, Value = V, Error = E>,
-    F: Fn(&K, A) -> Result<V, E>,
+    F: Fn(&K, A) -> Result<V, FnErr>,
 > {
     pub store: S,
     pub try_generator: F,
@@ -232,8 +234,15 @@ pub struct TryGenCacheStoreWrapper<
 }
 
 /// Default implementation
-impl<K, V, E, A, F: Fn(&K, A) -> Result<V, E>, S: TryCacheStore<Key = K, Value = V, Error = E>>
-    TryGenCacheStoreWrapper<K, V, E, A, S, F>
+impl<
+        K,
+        V,
+        E,
+        A,
+        FnErr: Into<E>,
+        F: Fn(&K, A) -> Result<V, FnErr>,
+        S: TryCacheStore<Key = K, Value = V, Error = E>,
+    > TryGenCacheStoreWrapper<K, V, E, A, FnErr, S, F>
 {
     /// Make a new [`TryGenCacheStore`] from a fallible store and fallible generator function.
     pub fn new(store: S, try_generator: F) -> Self {
@@ -248,8 +257,15 @@ impl<K, V, E, A, F: Fn(&K, A) -> Result<V, E>, S: TryCacheStore<Key = K, Value =
 /// Functions with multiple stages will return the same type of error without any way to detect at
 /// what point it failed, and not undoing the changes. If you don't like this you'll have to
 /// manually follow the steps done by the function and handle the errors yourself.
-impl<K, V, E, A, F: Fn(&K, A) -> Result<V, E>, S: TryCacheStore<Key = K, Value = V, Error = E>>
-    TryGenCacheStore for TryGenCacheStoreWrapper<K, V, E, A, S, F>
+impl<
+        K,
+        V,
+        E,
+        A,
+        FnErr: Into<E>,
+        F: Fn(&K, A) -> Result<V, FnErr>,
+        S: TryCacheStore<Key = K, Value = V, Error = E>,
+    > TryGenCacheStore for TryGenCacheStoreWrapper<K, V, E, A, FnErr, S, F>
 {
     type Key = K;
     type Value = V;
@@ -258,7 +274,7 @@ impl<K, V, E, A, F: Fn(&K, A) -> Result<V, E>, S: TryCacheStore<Key = K, Value =
 
     /// Attempt to generate a new value without checking cache or adding the value to it.
     fn try_gen(&self, key: impl Borrow<K>, args: A) -> Result<V, E> {
-        (self.try_generator)(key.borrow(), args)
+        (self.try_generator)(key.borrow(), args).map_err(Into::into)
     }
 
     /// Attempt to get the value from cache or generate a new one without adding it.

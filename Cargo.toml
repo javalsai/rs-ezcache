@@ -1,6 +1,6 @@
 [package]
 name = "ezcache"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["javalsai <javalsai@proton.me>"]
 description = "Easy and flexible cache library for Rust"
 edition = "2021"
@@ -18,7 +18,7 @@ ambassador = "0.4"
 base64 = { version = "0.22", optional = true }
 bincode = { version = "1.3", optional = true }
 serde = { version = "1", optional = true, features = ["derive"] }
-sha2 = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true, features = ["sha2-asm"] }
 
 [features]
 std = []
@@ -41,3 +41,4 @@ rand = "0.8"
 rayon = "1.10"
 reqwest = { version = "0.12", features = ["blocking"] }
 tempfile = "3.15"
+thiserror = "2.0.11"
